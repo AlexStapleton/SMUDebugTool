@@ -58,8 +58,22 @@ namespace ZenStatesDebugTool.Profiles
 
         private void ApplyPboLimits(Profile p, Cpu cpu, ApplyResult r)
         {
-            // Filled in a later task after verifying SetPPTLimit / SetTDCSOCLimit /
-            // SetEDCSOCLimit / SetPBOScalar signatures and units against the DLL.
+            // Units: PPT in watts, TDC/EDC in amps, passed straight through as uint.
+            // TDC/EDC target the VDD (core) rail, matching desktop PBO (Ryzen Master).
+            // A value of 0 means "leave unchanged", so a CO-only profile does not
+            // accidentally clamp the power/current limits to zero.
+            if (p.PptWatts.HasValue && p.PptWatts.Value > 0
+                && cpu.SetPPTLimit((uint)p.PptWatts.Value) != SMU.Status.OK)
+                r.Fail("Failed to set PPT limit.");
+            if (p.TdcAmps.HasValue && p.TdcAmps.Value > 0
+                && cpu.SetTDCVDDLimit((uint)p.TdcAmps.Value) != SMU.Status.OK)
+                r.Fail("Failed to set TDC limit.");
+            if (p.EdcAmps.HasValue && p.EdcAmps.Value > 0
+                && cpu.SetEDCVDDLimit((uint)p.EdcAmps.Value) != SMU.Status.OK)
+                r.Fail("Failed to set EDC limit.");
+            if (p.PboScalar.HasValue && p.PboScalar.Value > 0
+                && cpu.SetPBOScalar((uint)p.PboScalar.Value) != SMU.Status.OK)
+                r.Fail("Failed to set PBO scalar.");
         }
 
         // Replicated from SettingsForm so the apply path is form-independent.

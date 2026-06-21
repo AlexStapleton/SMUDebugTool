@@ -39,6 +39,7 @@ namespace ZenStatesDebugTool
         private ProfileManager profileManager;
         private readonly ProfileApplier profileApplier = new ProfileApplier();
         private ComboBox comboBoxProfiles;
+        private NumericUpDown numericUpDownPpt, numericUpDownTdc, numericUpDownEdc, numericUpDownPboScalar;
         private ManagementObject classInstance;
         private string instanceName;
         private ManagementBaseObject pack;
@@ -355,6 +356,7 @@ namespace ZenStatesDebugTool
         {
             BuildCoActionBar();
             BuildCcdBlocks();
+            BuildPboLimitControls();
         }
 
         private void BuildCoActionBar()
@@ -436,6 +438,34 @@ namespace ZenStatesDebugTool
             };
             btn.Click += onClick;
             return btn;
+        }
+
+        private void BuildPboLimitControls()
+        {
+            numericUpDownPpt       = MakeLimitBox(0, 1000);
+            numericUpDownTdc       = MakeLimitBox(0, 1000);
+            numericUpDownEdc       = MakeLimitBox(0, 1000);
+            numericUpDownPboScalar = MakeLimitBox(0, 10);
+
+            flowLayoutPanelCcdActions.Controls.Add(new Label { Text = "PPT(W)", AutoSize = true, Margin = new Padding(12, 6, 2, 0) });
+            flowLayoutPanelCcdActions.Controls.Add(numericUpDownPpt);
+            flowLayoutPanelCcdActions.Controls.Add(new Label { Text = "TDC(A)", AutoSize = true, Margin = new Padding(8, 6, 2, 0) });
+            flowLayoutPanelCcdActions.Controls.Add(numericUpDownTdc);
+            flowLayoutPanelCcdActions.Controls.Add(new Label { Text = "EDC(A)", AutoSize = true, Margin = new Padding(8, 6, 2, 0) });
+            flowLayoutPanelCcdActions.Controls.Add(numericUpDownEdc);
+            flowLayoutPanelCcdActions.Controls.Add(new Label { Text = "Scalar", AutoSize = true, Margin = new Padding(8, 6, 2, 0) });
+            flowLayoutPanelCcdActions.Controls.Add(numericUpDownPboScalar);
+        }
+
+        private NumericUpDown MakeLimitBox(int min, int max)
+        {
+            return new NumericUpDown
+            {
+                Minimum = min,
+                Maximum = max,
+                Width = 60,
+                Margin = new Padding(0, 3, 0, 0)
+            };
         }
 
         private void RefreshProfileList(string select)
@@ -2185,7 +2215,10 @@ namespace ZenStatesDebugTool
 
             profile.Fmax = numericUpDownFmax.Value;
 
-            // PBO limits are added to this method in a later task.
+            profile.PptWatts = (int)numericUpDownPpt.Value;
+            profile.TdcAmps = (int)numericUpDownTdc.Value;
+            profile.EdcAmps = (int)numericUpDownEdc.Value;
+            profile.PboScalar = (int)numericUpDownPboScalar.Value;
 
             return profile;
         }
@@ -2217,7 +2250,14 @@ namespace ZenStatesDebugTool
                 numericUpDownFmax.Value =
                     Math.Max(numericUpDownFmax.Minimum, Math.Min(numericUpDownFmax.Maximum, profile.Fmax.Value));
 
-            // PBO limits are applied to the UI in a later task.
+            if (profile.PptWatts.HasValue)
+                numericUpDownPpt.Value = Math.Max(numericUpDownPpt.Minimum, Math.Min(numericUpDownPpt.Maximum, profile.PptWatts.Value));
+            if (profile.TdcAmps.HasValue)
+                numericUpDownTdc.Value = Math.Max(numericUpDownTdc.Minimum, Math.Min(numericUpDownTdc.Maximum, profile.TdcAmps.Value));
+            if (profile.EdcAmps.HasValue)
+                numericUpDownEdc.Value = Math.Max(numericUpDownEdc.Minimum, Math.Min(numericUpDownEdc.Maximum, profile.EdcAmps.Value));
+            if (profile.PboScalar.HasValue)
+                numericUpDownPboScalar.Value = Math.Max(numericUpDownPboScalar.Minimum, Math.Min(numericUpDownPboScalar.Maximum, profile.PboScalar.Value));
         }
 
         private static void SetCsTier(NumericUpDown low, NumericUpDown med, NumericUpDown high, CurveShaperTier tier)
