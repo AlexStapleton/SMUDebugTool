@@ -184,5 +184,13 @@
   <ItemGroup>
     <Content Include="ZenStatesDebug.ico" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Native port-IO driver loaded by ZenStates-Core at runtime (new Cpu()).
+         Copied next to the exe so the app can initialise hardware access. -->
+    <None Include="Prebuilt\inpoutx64.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>inpoutx64.dll</Link>
+    </None>
+  </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
