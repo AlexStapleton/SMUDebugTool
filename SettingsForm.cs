@@ -364,15 +364,21 @@ namespace ZenStatesDebugTool
                 comboBoxStartupProfile.SelectedIndexChanged += ComboBoxStartupProfile_SelectedIndexChanged;
             }
             comboBoxStartupProfile.SelectedIndexChanged -= ComboBoxStartupProfile_SelectedIndexChanged;
-            comboBoxStartupProfile.Items.Clear();
-            foreach (var n in profileManager.List())
-                comboBoxStartupProfile.Items.Add(n);
-            string startupName = GetStartupProfileFromTask("RyzenSDT");
-            if (startupName != null && comboBoxStartupProfile.Items.Contains(startupName))
-                comboBoxStartupProfile.SelectedItem = startupName;
-            else if (comboBoxStartupProfile.Items.Count > 0)
-                comboBoxStartupProfile.SelectedIndex = 0;
-            comboBoxStartupProfile.SelectedIndexChanged += ComboBoxStartupProfile_SelectedIndexChanged;
+            try
+            {
+                comboBoxStartupProfile.Items.Clear();
+                foreach (var n in profileManager.List())
+                    comboBoxStartupProfile.Items.Add(n);
+                string startupName = GetStartupProfileFromTask("RyzenSDT");
+                if (startupName != null && comboBoxStartupProfile.Items.Contains(startupName))
+                    comboBoxStartupProfile.SelectedItem = startupName;
+                else if (comboBoxStartupProfile.Items.Count > 0)
+                    comboBoxStartupProfile.SelectedIndex = 0;
+            }
+            finally
+            {
+                comboBoxStartupProfile.SelectedIndexChanged += ComboBoxStartupProfile_SelectedIndexChanged;
+            }
 
             numericUpDownFmax.Value = cpu.GetFMax();
         }
@@ -2443,6 +2449,13 @@ namespace ZenStatesDebugTool
 
         private void CheckBoxApplyCOStartup_CheckedChanged(object sender, EventArgs e)
         {
+            if (checkBoxApplyCOStartup.Checked
+                && string.IsNullOrEmpty(comboBoxStartupProfile?.SelectedItem as string))
+            {
+                HandleError("Select a startup profile first.");
+                checkBoxApplyCOStartup.Checked = false;
+                return;
+            }
             RegisterOrRemoveStartupTask();
             textBoxResult.Text = $"Startup settings saved." + Environment.NewLine + textBoxResult.Text;
         }
