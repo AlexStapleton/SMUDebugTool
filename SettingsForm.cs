@@ -44,8 +44,6 @@ namespace ZenStatesDebugTool
         private ManagementBaseObject pack;
         private const string profilesFolderName = "profiles";
         private const string filename = "co_profile.txt";
-        private readonly string[] args;
-        private readonly bool isApplyProfile;
         private readonly Dictionary<int, NumericUpDown> coControls = new Dictionary<int, NumericUpDown>();
 
         public SettingsForm()
@@ -62,12 +60,6 @@ namespace ZenStatesDebugTool
                 profileManager = new ProfileManager(profilesPath);
                 profileManager.EnsureDirectory();
                 profileManager.MigrateLegacyIfNeeded();
-
-                args = Environment.GetCommandLineArgs();
-                foreach (string arg in args)
-                {
-                    isApplyProfile |= (arg.ToLower() == "--applyprofile");
-                }
 
                 cpu = new Cpu();
 
@@ -203,32 +195,7 @@ namespace ZenStatesDebugTool
             ToolTip toolTip = new ToolTip();
             toolTip.SetToolTip(checkBoxPROCHOT, "Disables temperature throttling. Can be useful on extreme cooling.");
 
-            if (isApplyProfile)
-            {
-                ApplyCOProfile();
-                InitPBO();
-                tabControl1.SelectedTab = tabPagePbo;
-            }
-
             SetStatusText($"{cpu.info.codeName}. Ready.");
-        }
-
-        private void ApplyCOProfile ()
-        {
-            List<Tuple<int, int>> margins = LoadCOProfile();
-            if (margins.Count > 0 && cpu.smu.Rsmu.SMU_MSG_SetDldoPsmMargin != 0)
-            {
-                foreach (var margin in margins)
-                {
-                    int index = margin.Item1;
-                    int value = margin.Item2;
-                    int mapIndex = index < 8 ? 0 : 1;
-                    if ((~cpu.info.topology.coreDisableMap[mapIndex] >> index % 8 & 1) == 1)
-                    {
-                        cpu.SetPsmMarginSingleCore(EncodeCoreMarginBitmask(index), Convert.ToInt32(value));
-                    }
-                }
-            }
         }
 
         // TODO: Detect OC Mode and return PState freq if on auto
