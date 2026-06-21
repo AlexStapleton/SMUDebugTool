@@ -66,6 +66,25 @@
     <Reference Include="System.Resources.Extensions">
       <HintPath>$(PkgSystem_Resources_Extensions)\lib\net462\System.Resources.Extensions.dll</HintPath>
     </Reference>
+    <!-- Runtime dependency closure of System.Resources.Extensions' DeserializingResourceReader
+         (used because GenerateResourceUsePreserializedResources is on). These are not inbox on
+         net4.8 and must be deployed; binding redirects live in app.config. -->
+    <PackageReference Include="System.Memory" Version="4.5.5" GeneratePathProperty="true" />
+    <Reference Include="System.Memory">
+      <HintPath>$(PkgSystem_Memory)\lib\netstandard2.0\System.Memory.dll</HintPath>
+    </Reference>
+    <PackageReference Include="System.Buffers" Version="4.5.1" GeneratePathProperty="true" />
+    <Reference Include="System.Buffers">
+      <HintPath>$(PkgSystem_Buffers)\lib\netstandard2.0\System.Buffers.dll</HintPath>
+    </Reference>
+    <PackageReference Include="System.Numerics.Vectors" Version="4.5.0" GeneratePathProperty="true" />
+    <Reference Include="System.Numerics.Vectors">
+      <HintPath>$(PkgSystem_Numerics_Vectors)\lib\netstandard2.0\System.Numerics.Vectors.dll</HintPath>
+    </Reference>
+    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="4.5.3" GeneratePathProperty="true" />
+    <Reference Include="System.Runtime.CompilerServices.Unsafe">
+      <HintPath>$(PkgSystem_Runtime_CompilerServices_Unsafe)\lib\netstandard2.0\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
+    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Management" />

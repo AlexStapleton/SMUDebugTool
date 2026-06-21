@@ -34,10 +34,13 @@ namespace ZenStatesDebugTool
                 MainForm.Text = appString;
                 Application.Run(MainForm);
             }
-            catch (ApplicationException ex)
+            catch (Exception ex)
             {
-                Console.WriteLine(ex.Message);
-                Application.Exit();
+                // Surface ANY startup failure instead of exiting silently. The original
+                // code only caught ApplicationException, so e.g. a resource-load failure
+                // in InitializeComponent (outside the form's own try) killed the process
+                // with no window and no message.
+                MessageBox.Show(ex.ToString(), "SMUDebugTool failed to start");
             }
         }
 
