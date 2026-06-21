@@ -34,6 +34,8 @@ namespace ProfileCore.Tests
             Assert.Equal(2, restored.CurveShaperTiers[0].Medium);
             Assert.Equal(5200m, restored.Fmax);
             Assert.Equal(142, restored.PptWatts);
+            Assert.Equal(95, restored.TdcAmps);
+            Assert.Equal(140, restored.EdcAmps);
             Assert.Equal(3, restored.PboScalar);
         }
     }
