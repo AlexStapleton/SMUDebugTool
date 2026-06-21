@@ -85,6 +85,9 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="CpuSingleton.cs" />
+    <Compile Include="Profiles\Profile.cs" />
+    <Compile Include="Profiles\ProfileManager.cs" />
+    <Compile Include="Profiles\ProfileApplier.cs" />
     <Compile Include="MemoryDumper.cs" />
     <Compile Include="PCIRangeMonitor.cs">
       <SubType>Form</SubType>
