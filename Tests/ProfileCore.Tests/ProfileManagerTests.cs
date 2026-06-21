@@ -74,5 +74,43 @@ namespace ProfileCore.Tests
             var mgr = new ProfileManager(_dir);
             Assert.Throws<ArgumentException>(() => mgr.Save(new Profile { Name = "a/b" }));
         }
+
+        [Fact]
+        public void ParseLegacy_reads_margins_and_fmax()
+        {
+            var lines = new[] { "[0,-25]", "[3,-10]", "fmax=5050" };
+            var profile = ProfileManager.ParseLegacy(lines);
+
+            Assert.Equal("Default", profile.Name);
+            Assert.Equal(-25, profile.CoMargins[0]);
+            Assert.Equal(-10, profile.CoMargins[3]);
+            Assert.Equal(5050m, profile.Fmax);
+        }
+
+        [Fact]
+        public void MigrateLegacyIfNeeded_creates_Default_from_legacy_file()
+        {
+            Directory.CreateDirectory(_dir);
+            File.WriteAllLines(Path.Combine(_dir, ProfileManager.LegacyFileName),
+                new[] { "[0,-20]", "fmax=4900" });
+            var mgr = new ProfileManager(_dir);
+
+            bool migrated = mgr.MigrateLegacyIfNeeded();
+
+            Assert.True(migrated);
+            var loaded = mgr.Load("Default");
+            Assert.Equal(-20, loaded.CoMargins[0]);
+            Assert.Equal(4900m, loaded.Fmax);
+        }
+
+        [Fact]
+        public void MigrateLegacyIfNeeded_is_noop_when_profiles_exist()
+        {
+            var mgr = new ProfileManager(_dir);
+            mgr.Save(new Profile { Name = "Existing" });
+            File.WriteAllLines(Path.Combine(_dir, ProfileManager.LegacyFileName), new[] { "[0,-20]" });
+
+            Assert.False(mgr.MigrateLegacyIfNeeded());
+        }
     }
 }
