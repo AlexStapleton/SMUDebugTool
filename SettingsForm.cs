@@ -13,6 +13,7 @@ using System.Reflection;
 using System.Threading;
 using System.Windows.Forms;
 using ZenStates.Core;
+using ZenStatesDebugTool.Profiles;
 using ZenStatesDebugTool.Properties;
 using Application = System.Windows.Forms.Application;
 using static ZenStates.Core.Cpu;
@@ -35,6 +36,7 @@ namespace ZenStatesDebugTool
         private readonly string wmiScope = "root\\wmi";
         private readonly string profilesPath;
         private readonly string defaultsPath;
+        private ProfileManager profileManager;
         private ManagementObject classInstance;
         private string instanceName;
         private ManagementBaseObject pack;
@@ -54,7 +56,11 @@ namespace ZenStatesDebugTool
             {
                 profilesPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, profilesFolderName);
                 defaultsPath =  Path.Combine(profilesPath, filename);
-                
+
+                profileManager = new ProfileManager(profilesPath);
+                profileManager.EnsureDirectory();
+                profileManager.MigrateLegacyIfNeeded();
+
                 args = Environment.GetCommandLineArgs();
                 foreach (string arg in args)
                 {
