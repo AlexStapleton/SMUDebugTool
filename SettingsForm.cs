@@ -2026,6 +2026,74 @@ namespace ZenStatesDebugTool
             }
         }
 
+        private Profile GatherProfileFromUi(string name)
+        {
+            var profile = new Profile { Name = name };
+
+            if (cpu.smu.Rsmu.SMU_MSG_SetDldoPsmMargin != 0)
+            {
+                for (var i = 0; i < GetPhysicalCoreCount(); i++)
+                {
+                    NumericUpDown control = GetCOControl(i);
+                    if (control != null && control.Enabled)
+                        profile.CoMargins[i] = Convert.ToInt32(control.Value);
+                }
+            }
+
+            profile.CurveShaperTiers = new List<CurveShaperTier>
+            {
+                new CurveShaperTier { Low = (int)cs_min_low.Value,  Medium = (int)cs_min_med.Value,  High = (int)cs_min_high.Value },
+                new CurveShaperTier { Low = (int)cs_low_low.Value,  Medium = (int)cs_low_med.Value,  High = (int)cs_low_high.Value },
+                new CurveShaperTier { Low = (int)cs_med_low.Value,  Medium = (int)cs_med_med.Value,  High = (int)cs_med_high.Value },
+                new CurveShaperTier { Low = (int)cs_high_low.Value, Medium = (int)cs_high_med.Value, High = (int)cs_high_high.Value },
+                new CurveShaperTier { Low = (int)cs_max_low.Value,  Medium = (int)cs_max_med.Value,  High = (int)cs_max_high.Value },
+            };
+
+            profile.Fmax = numericUpDownFmax.Value;
+
+            // PBO limits are added to this method in a later task.
+
+            return profile;
+        }
+
+        private void ApplyProfileToUi(Profile profile)
+        {
+            if (profile == null) return;
+
+            if (profile.CoMargins != null && cpu.smu.Rsmu.SMU_MSG_SetDldoPsmMargin != 0)
+            {
+                foreach (var kv in profile.CoMargins)
+                {
+                    NumericUpDown control = GetCOControl(kv.Key);
+                    if (control != null && control.Enabled)
+                        control.Value = Math.Max(control.Minimum, Math.Min(control.Maximum, kv.Value));
+                }
+            }
+
+            if (profile.CurveShaperTiers != null && profile.CurveShaperTiers.Count >= 5)
+            {
+                SetCsTier(cs_min_low,  cs_min_med,  cs_min_high,  profile.CurveShaperTiers[0]);
+                SetCsTier(cs_low_low,  cs_low_med,  cs_low_high,  profile.CurveShaperTiers[1]);
+                SetCsTier(cs_med_low,  cs_med_med,  cs_med_high,  profile.CurveShaperTiers[2]);
+                SetCsTier(cs_high_low, cs_high_med, cs_high_high, profile.CurveShaperTiers[3]);
+                SetCsTier(cs_max_low,  cs_max_med,  cs_max_high,  profile.CurveShaperTiers[4]);
+            }
+
+            if (profile.Fmax.HasValue)
+                numericUpDownFmax.Value =
+                    Math.Max(numericUpDownFmax.Minimum, Math.Min(numericUpDownFmax.Maximum, profile.Fmax.Value));
+
+            // PBO limits are applied to the UI in a later task.
+        }
+
+        private static void SetCsTier(NumericUpDown low, NumericUpDown med, NumericUpDown high, CurveShaperTier tier)
+        {
+            if (tier == null) return;
+            low.Value = Math.Max(low.Minimum, Math.Min(low.Maximum, tier.Low));
+            med.Value = Math.Max(med.Minimum, Math.Min(med.Maximum, tier.Medium));
+            high.Value = Math.Max(high.Minimum, Math.Min(high.Maximum, tier.High));
+        }
+
         private List<Tuple<int, int>> LoadCOProfile()
         {
             List<Tuple<int, int>> margins = new List<Tuple<int, int>>();
