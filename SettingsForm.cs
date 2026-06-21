@@ -475,14 +475,24 @@ namespace ZenStatesDebugTool
         {
             if (comboBoxProfiles == null) return;
             comboBoxProfiles.SelectedIndexChanged -= ComboBoxProfiles_SelectedIndexChanged;
-            comboBoxProfiles.Items.Clear();
-            foreach (var n in profileManager.List())
-                comboBoxProfiles.Items.Add(n);
-            if (select != null && comboBoxProfiles.Items.Contains(select))
-                comboBoxProfiles.SelectedItem = select;
-            else if (comboBoxProfiles.Items.Count > 0)
-                comboBoxProfiles.SelectedIndex = 0;
-            comboBoxProfiles.SelectedIndexChanged += ComboBoxProfiles_SelectedIndexChanged;
+            try
+            {
+                comboBoxProfiles.Items.Clear();
+                foreach (var n in profileManager.List())
+                    comboBoxProfiles.Items.Add(n);
+                if (select != null && comboBoxProfiles.Items.Contains(select))
+                    comboBoxProfiles.SelectedItem = select;
+                else if (comboBoxProfiles.Items.Count > 0)
+                    comboBoxProfiles.SelectedIndex = 0;
+            }
+            catch (Exception ex)
+            {
+                HandleError(ex.Message);
+            }
+            finally
+            {
+                comboBoxProfiles.SelectedIndexChanged += ComboBoxProfiles_SelectedIndexChanged;
+            }
         }
 
         private string SelectedProfileName => comboBoxProfiles?.SelectedItem as string;
@@ -491,27 +501,48 @@ namespace ZenStatesDebugTool
         {
             var name = SelectedProfileName;
             if (string.IsNullOrEmpty(name)) return;
-            var profile = profileManager.Load(name);
-            ApplyProfileToUi(profile);
-            SetStatusText($"Profile '{name}' loaded into the form. Use 'Apply Profile' to apply to CPU.");
+            try
+            {
+                var profile = profileManager.Load(name);
+                ApplyProfileToUi(profile);
+                SetStatusText($"Profile '{name}' loaded into the form. Use 'Apply Profile' to apply to CPU.");
+            }
+            catch (Exception ex)
+            {
+                HandleError(ex.Message);
+            }
         }
 
         private void ButtonApplyProfile_Click(object sender, EventArgs e)
         {
             var name = SelectedProfileName;
             if (string.IsNullOrEmpty(name)) { HandleError("No profile selected."); return; }
-            var result = profileApplier.Apply(profileManager.Load(name), cpu);
-            SetStatusText(result.Success
-                ? $"Profile '{name}' applied."
-                : "Apply finished with errors: " + string.Join("; ", result.Messages));
+            try
+            {
+                var result = profileApplier.Apply(profileManager.Load(name), cpu);
+                SetStatusText(result.Success
+                    ? $"Profile '{name}' applied."
+                    : "Apply finished with errors: " + string.Join("; ", result.Messages));
+            }
+            catch (Exception ex)
+            {
+                HandleError(ex.Message);
+            }
         }
 
         private void ButtonSaveProfile_Click(object sender, EventArgs e)
         {
             var name = SelectedProfileName;
             if (string.IsNullOrEmpty(name)) { ButtonSaveAsProfile_Click(sender, e); return; }
-            profileManager.Save(GatherProfileFromUi(name));
-            SetStatusText($"Profile '{name}' saved.");
+            try
+            {
+                profileManager.Save(GatherProfileFromUi(name));
+                SetStatusText($"Profile '{name}' saved.");
+            }
+            catch (Exception ex)
+            {
+                HandleError(ex.Message);
+            }
         }
 
         private void ButtonSaveAsProfile_Click(object sender, EventArgs e)
@@ -519,9 +550,16 @@ namespace ZenStatesDebugTool
             string name = PromptForProfileName();
             if (name == null) return;
             if (!ProfileManager.IsValidName(name)) { HandleError("Invalid profile name."); return; }
-            profileManager.Save(GatherProfileFromUi(name));
-            RefreshProfileList(name);
-            SetStatusText($"Profile '{name}' saved.");
+            try
+            {
+                profileManager.Save(GatherProfileFromUi(name));
+                RefreshProfileList(name);
+                SetStatusText($"Profile '{name}' saved.");
+            }
+            catch (Exception ex)
+            {
+                HandleError(ex.Message);
+            }
         }
 
         private void ButtonDeleteProfile_Click(object sender, EventArgs e)
@@ -530,9 +568,16 @@ namespace ZenStatesDebugTool
             if (string.IsNullOrEmpty(name)) return;
             if (MessageBox.Show($"Delete profile '{name}'?", "Confirm",
                     MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
-            profileManager.Delete(name);
-            RefreshProfileList(null);
-            SetStatusText($"Profile '{name}' deleted.");
+            try
+            {
+                profileManager.Delete(name);
+                RefreshProfileList(null);
+                SetStatusText($"Profile '{name}' deleted.");
+            }
+            catch (Exception ex)
+            {
+                HandleError(ex.Message);
+            }
         }
 
         private string PromptForProfileName()
