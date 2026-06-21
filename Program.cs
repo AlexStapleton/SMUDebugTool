@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using System.Linq;
 using System.Windows.Forms;
 using ZenStates.Core;
 using ZenStatesDebugTool.Profiles;
@@ -13,10 +12,10 @@ namespace ZenStatesDebugTool
         static void Main()
         {
             string[] args = Environment.GetCommandLineArgs();
-            string profileName = GetApplyProfileName(args);
-            bool isApply = args.Any(a => a.ToLower() == "--applyprofile");
 
-            if (isApply)
+            // A single scan decides both whether the flag is present and which
+            // profile name (if any) follows it, so the two can never disagree.
+            if (TryGetApplyProfile(args, out string profileName))
             {
                 Environment.Exit(RunHeadlessApply(profileName));
                 return;
@@ -42,18 +41,21 @@ namespace ZenStatesDebugTool
             }
         }
 
-        // Returns the token after "--applyprofile", or null if none/absent.
-        private static string GetApplyProfileName(string[] args)
+        // True if "--applyprofile" is present. profileName is set to the token that
+        // follows it, or null when no (non-flag) name follows.
+        private static bool TryGetApplyProfile(string[] args, out string profileName)
         {
-            for (int i = 0; i < args.Length - 1; i++)
+            profileName = null;
+            for (int i = 0; i < args.Length; i++)
             {
-                if (args[i].ToLower() == "--applyprofile")
+                if (string.Equals(args[i], "--applyprofile", StringComparison.OrdinalIgnoreCase))
                 {
-                    string next = args[i + 1];
-                    return next.StartsWith("--") ? null : next;
+                    if (i + 1 < args.Length && !args[i + 1].StartsWith("--"))
+                        profileName = args[i + 1];
+                    return true;
                 }
             }
-            return null;
+            return false;
         }
 
         // 0 = success, 1 = failure. No UI in this path.
@@ -100,7 +102,9 @@ namespace ZenStatesDebugTool
         {
             try
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(logPath));
+                var dir = Path.GetDirectoryName(logPath);
+                if (!string.IsNullOrEmpty(dir))
+                    Directory.CreateDirectory(dir);
                 File.AppendAllText(logPath, $"{DateTime.Now:s} {message}{Environment.NewLine}");
             }
             catch { /* logging must never throw in the headless path */ }
