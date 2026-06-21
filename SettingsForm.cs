@@ -39,6 +39,7 @@ namespace ZenStatesDebugTool
         private ProfileManager profileManager;
         private readonly ProfileApplier profileApplier = new ProfileApplier();
         private ComboBox comboBoxProfiles;
+        private ComboBox comboBoxStartupProfile;
         private NumericUpDown numericUpDownPpt, numericUpDownTdc, numericUpDownEdc, numericUpDownPboScalar;
         private ManagementObject classInstance;
         private string instanceName;
@@ -349,6 +350,30 @@ namespace ZenStatesDebugTool
             }*/
 
             checkBoxApplyCOStartup.Checked = TaskExists("RyzenSDT");
+
+            if (comboBoxStartupProfile == null)
+            {
+                comboBoxStartupProfile = new ComboBox
+                {
+                    DropDownStyle = ComboBoxStyle.DropDownList,
+                    Width = 140
+                };
+                comboBoxStartupProfile.Location = new Point(
+                    checkBoxApplyCOStartup.Right + 8, checkBoxApplyCOStartup.Top - 2);
+                checkBoxApplyCOStartup.Parent.Controls.Add(comboBoxStartupProfile);
+                comboBoxStartupProfile.SelectedIndexChanged += ComboBoxStartupProfile_SelectedIndexChanged;
+            }
+            comboBoxStartupProfile.SelectedIndexChanged -= ComboBoxStartupProfile_SelectedIndexChanged;
+            comboBoxStartupProfile.Items.Clear();
+            foreach (var n in profileManager.List())
+                comboBoxStartupProfile.Items.Add(n);
+            string startupName = GetStartupProfileFromTask("RyzenSDT");
+            if (startupName != null && comboBoxStartupProfile.Items.Contains(startupName))
+                comboBoxStartupProfile.SelectedItem = startupName;
+            else if (comboBoxStartupProfile.Items.Count > 0)
+                comboBoxStartupProfile.SelectedIndex = 0;
+            comboBoxStartupProfile.SelectedIndexChanged += ComboBoxStartupProfile_SelectedIndexChanged;
+
             numericUpDownFmax.Value = cpu.GetFMax();
         }
 
@@ -2351,30 +2376,24 @@ namespace ZenStatesDebugTool
             }
         }
 
-        static void AddTaskToScheduler(string taskName, string executablePath, int delaySeconds = 0)
+        static void AddTaskToScheduler(string taskName, string executablePath, string profileName, int delaySeconds = 0)
         {
-            // Create a new task service
             using (TaskService taskService = new TaskService())
             {
-                // Create a new task definition
                 TaskDefinition taskDefinition = taskService.NewTask();
 
-                // Set the task properties
-                taskDefinition.RegistrationInfo.Description = "Run Ryzen SMU Debug Tool on user logon to apply CO profile. Automatically created by RyzenSDT. Remove manually or from the checkbox in PBO tab.";
+                taskDefinition.RegistrationInfo.Description = "Run Ryzen SMU Debug Tool on user logon to apply a CO/PBO profile. Automatically created by RyzenSDT. Remove manually or from the checkbox in PBO tab.";
                 taskDefinition.Principal.UserId = WindowsIdentity.GetCurrent().Name;
                 taskDefinition.Principal.RunLevel = TaskRunLevel.Highest;
                 taskDefinition.Principal.LogonType = TaskLogonType.InteractiveToken;
 
-                // Create a trigger that starts the task at logon with a specified delay
                 LogonTrigger logonTrigger = new LogonTrigger();
-                logonTrigger.Delay = TimeSpan.FromSeconds(delaySeconds); // Set the delay
+                logonTrigger.Delay = TimeSpan.FromSeconds(delaySeconds);
                 taskDefinition.Triggers.Add(logonTrigger);
 
-                // Create an action that runs the specified executable
-                ExecAction execAction = new ExecAction(executablePath, "--applyprofile");
+                ExecAction execAction = new ExecAction(executablePath, $"--applyprofile \"{profileName}\"");
                 taskDefinition.Actions.Add(execAction);
 
-                // Register the task in the root folder of the Task Scheduler
                 taskService.RootFolder.RegisterTaskDefinition(taskName, taskDefinition);
             }
         }
@@ -2389,25 +2408,34 @@ namespace ZenStatesDebugTool
             }
         }
 
-        private void SetStartup(bool isChecked = false)
+        private void ComboBoxStartupProfile_SelectedIndexChanged(object sender, EventArgs e)
         {
-            /*using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true))
-            {
-                if (isChecked && key.GetValue("RyzenSDT") == null)
-                {
-                    key.SetValue("RyzenSDT", Application.ExecutablePath + " --applyprofile");
-                }
-                else if (!isChecked && key.GetValue("RyzenSDT") != null)
-                {
-                    key.DeleteValue("RyzenSDT", false);
-                }
-            }*/
+            if (checkBoxApplyCOStartup.Checked) RegisterOrRemoveStartupTask();
+        }
 
-            if (isChecked && !TaskExists("RyzenSDT"))
+        private static string GetStartupProfileFromTask(string taskName)
+        {
+            using (TaskService taskService = new TaskService())
             {
-                AddTaskToScheduler("RyzenSDT", Application.ExecutablePath, 0);
+                Task task = taskService.GetTask(taskName);
+                var exec = task?.Definition.Actions.OfType<ExecAction>().FirstOrDefault();
+                if (exec == null) return null;
+                int idx = exec.Arguments.IndexOf("--applyprofile", StringComparison.OrdinalIgnoreCase);
+                if (idx < 0) return null;
+                string rest = exec.Arguments.Substring(idx + "--applyprofile".Length).Trim().Trim('"');
+                return rest.Length > 0 ? rest : null;
             }
-            else
+        }
+
+        private void RegisterOrRemoveStartupTask()
+        {
+            string name = comboBoxStartupProfile?.SelectedItem as string;
+            if (checkBoxApplyCOStartup.Checked && !string.IsNullOrEmpty(name))
+            {
+                if (TaskExists("RyzenSDT")) RemoveTaskFromScheduler("RyzenSDT");
+                AddTaskToScheduler("RyzenSDT", Application.ExecutablePath, name, 5);
+            }
+            else if (!checkBoxApplyCOStartup.Checked && TaskExists("RyzenSDT"))
             {
                 RemoveTaskFromScheduler("RyzenSDT");
             }
@@ -2415,7 +2443,7 @@ namespace ZenStatesDebugTool
 
         private void CheckBoxApplyCOStartup_CheckedChanged(object sender, EventArgs e)
         {
-            SetStartup((sender as CheckBox).Checked);
+            RegisterOrRemoveStartupTask();
             textBoxResult.Text = $"Startup settings saved." + Environment.NewLine + textBoxResult.Text;
         }
 
