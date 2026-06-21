@@ -37,6 +37,8 @@ namespace ZenStatesDebugTool
         private readonly string profilesPath;
         private readonly string defaultsPath;
         private ProfileManager profileManager;
+        private readonly ProfileApplier profileApplier = new ProfileApplier();
+        private ComboBox comboBoxProfiles;
         private ManagementObject classInstance;
         private string instanceName;
         private ManagementBaseObject pack;
@@ -431,6 +433,126 @@ namespace ZenStatesDebugTool
             flowLayoutPanelCcdActions.Controls.Add(applyBtn);
             flowLayoutPanelCcdActions.Controls.Add(allDecBtn);
             flowLayoutPanelCcdActions.Controls.Add(allIncBtn);
+
+            comboBoxProfiles = new ComboBox
+            {
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Width = 140,
+                Margin = new Padding(12, 0, 6, 0)
+            };
+            comboBoxProfiles.SelectedIndexChanged += ComboBoxProfiles_SelectedIndexChanged;
+
+            Button applyProfileBtn = MakeBarButton("Apply Profile", ButtonApplyProfile_Click);
+            Button saveBtn = MakeBarButton("Save", ButtonSaveProfile_Click);
+            Button saveAsBtn = MakeBarButton("Save As…", ButtonSaveAsProfile_Click);
+            Button deleteBtn = MakeBarButton("Delete", ButtonDeleteProfile_Click);
+
+            flowLayoutPanelCcdActions.Controls.Add(comboBoxProfiles);
+            flowLayoutPanelCcdActions.Controls.Add(applyProfileBtn);
+            flowLayoutPanelCcdActions.Controls.Add(saveBtn);
+            flowLayoutPanelCcdActions.Controls.Add(saveAsBtn);
+            flowLayoutPanelCcdActions.Controls.Add(deleteBtn);
+
+            RefreshProfileList(null);
+        }
+
+        private Button MakeBarButton(string text, EventHandler onClick)
+        {
+            var btn = new Button
+            {
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Margin = new Padding(0, 0, 4, 0),
+                Padding = new Padding(6, 0, 6, 0),
+                Text = text,
+                UseVisualStyleBackColor = true
+            };
+            btn.Click += onClick;
+            return btn;
+        }
+
+        private void RefreshProfileList(string select)
+        {
+            if (comboBoxProfiles == null) return;
+            comboBoxProfiles.SelectedIndexChanged -= ComboBoxProfiles_SelectedIndexChanged;
+            comboBoxProfiles.Items.Clear();
+            foreach (var n in profileManager.List())
+                comboBoxProfiles.Items.Add(n);
+            if (select != null && comboBoxProfiles.Items.Contains(select))
+                comboBoxProfiles.SelectedItem = select;
+            else if (comboBoxProfiles.Items.Count > 0)
+                comboBoxProfiles.SelectedIndex = 0;
+            comboBoxProfiles.SelectedIndexChanged += ComboBoxProfiles_SelectedIndexChanged;
+        }
+
+        private string SelectedProfileName => comboBoxProfiles?.SelectedItem as string;
+
+        private void ComboBoxProfiles_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            var name = SelectedProfileName;
+            if (string.IsNullOrEmpty(name)) return;
+            var profile = profileManager.Load(name);
+            ApplyProfileToUi(profile);
+            SetStatusText($"Profile '{name}' loaded into the form. Use 'Apply Profile' to apply to CPU.");
+        }
+
+        private void ButtonApplyProfile_Click(object sender, EventArgs e)
+        {
+            var name = SelectedProfileName;
+            if (string.IsNullOrEmpty(name)) { HandleError("No profile selected."); return; }
+            var result = profileApplier.Apply(profileManager.Load(name), cpu);
+            SetStatusText(result.Success
+                ? $"Profile '{name}' applied."
+                : "Apply finished with errors: " + string.Join("; ", result.Messages));
+        }
+
+        private void ButtonSaveProfile_Click(object sender, EventArgs e)
+        {
+            var name = SelectedProfileName;
+            if (string.IsNullOrEmpty(name)) { ButtonSaveAsProfile_Click(sender, e); return; }
+            profileManager.Save(GatherProfileFromUi(name));
+            SetStatusText($"Profile '{name}' saved.");
+        }
+
+        private void ButtonSaveAsProfile_Click(object sender, EventArgs e)
+        {
+            string name = PromptForProfileName();
+            if (name == null) return;
+            if (!ProfileManager.IsValidName(name)) { HandleError("Invalid profile name."); return; }
+            profileManager.Save(GatherProfileFromUi(name));
+            RefreshProfileList(name);
+            SetStatusText($"Profile '{name}' saved.");
+        }
+
+        private void ButtonDeleteProfile_Click(object sender, EventArgs e)
+        {
+            var name = SelectedProfileName;
+            if (string.IsNullOrEmpty(name)) return;
+            if (MessageBox.Show($"Delete profile '{name}'?", "Confirm",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
+            profileManager.Delete(name);
+            RefreshProfileList(null);
+            SetStatusText($"Profile '{name}' deleted.");
+        }
+
+        private string PromptForProfileName()
+        {
+            using (var form = new Form())
+            using (var input = new TextBox { Dock = DockStyle.Top })
+            using (var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Dock = DockStyle.Bottom })
+            {
+                form.Text = "Profile name";
+                form.Width = 300;
+                form.Height = 120;
+                form.FormBorderStyle = FormBorderStyle.FixedDialog;
+                form.StartPosition = FormStartPosition.CenterParent;
+                form.AcceptButton = ok;
+                form.Controls.Add(input);
+                form.Controls.Add(ok);
+                return form.ShowDialog(this) == DialogResult.OK && input.Text.Trim().Length > 0
+                    ? input.Text.Trim()
+                    : null;
+            }
         }
 
         private void AllCcdDecrement_Click(object sender, EventArgs e)
