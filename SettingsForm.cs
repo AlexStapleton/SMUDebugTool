@@ -13,6 +13,7 @@ using System.Reflection;
 using System.Threading;
 using System.Windows.Forms;
 using ZenStates.Core;
+using ZenStatesDebugTool.Profiles;
 using ZenStatesDebugTool.Properties;
 using Application = System.Windows.Forms.Application;
 using static ZenStates.Core.Cpu;
@@ -35,13 +36,14 @@ namespace ZenStatesDebugTool
         private readonly string wmiScope = "root\\wmi";
         private readonly string profilesPath;
         private readonly string defaultsPath;
+        private ProfileManager profileManager;
+        private readonly ProfileApplier profileApplier = new ProfileApplier();
+        private ComboBox comboBoxProfiles;
         private ManagementObject classInstance;
         private string instanceName;
         private ManagementBaseObject pack;
         private const string profilesFolderName = "profiles";
         private const string filename = "co_profile.txt";
-        private readonly string[] args;
-        private readonly bool isApplyProfile;
         private readonly Dictionary<int, NumericUpDown> coControls = new Dictionary<int, NumericUpDown>();
 
         public SettingsForm()
@@ -54,12 +56,10 @@ namespace ZenStatesDebugTool
             {
                 profilesPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, profilesFolderName);
                 defaultsPath =  Path.Combine(profilesPath, filename);
-                
-                args = Environment.GetCommandLineArgs();
-                foreach (string arg in args)
-                {
-                    isApplyProfile |= (arg.ToLower() == "--applyprofile");
-                }
+
+                profileManager = new ProfileManager(profilesPath);
+                profileManager.EnsureDirectory();
+                profileManager.MigrateLegacyIfNeeded();
 
                 cpu = new Cpu();
 
@@ -195,32 +195,7 @@ namespace ZenStatesDebugTool
             ToolTip toolTip = new ToolTip();
             toolTip.SetToolTip(checkBoxPROCHOT, "Disables temperature throttling. Can be useful on extreme cooling.");
 
-            if (isApplyProfile)
-            {
-                ApplyCOProfile();
-                InitPBO();
-                tabControl1.SelectedTab = tabPagePbo;
-            }
-
             SetStatusText($"{cpu.info.codeName}. Ready.");
-        }
-
-        private void ApplyCOProfile ()
-        {
-            List<Tuple<int, int>> margins = LoadCOProfile();
-            if (margins.Count > 0 && cpu.smu.Rsmu.SMU_MSG_SetDldoPsmMargin != 0)
-            {
-                foreach (var margin in margins)
-                {
-                    int index = margin.Item1;
-                    int value = margin.Item2;
-                    int mapIndex = index < 8 ? 0 : 1;
-                    if ((~cpu.info.topology.coreDisableMap[mapIndex] >> index % 8 & 1) == 1)
-                    {
-                        cpu.SetPsmMarginSingleCore(EncodeCoreMarginBitmask(index), Convert.ToInt32(value));
-                    }
-                }
-            }
         }
 
         // TODO: Detect OC Mode and return PState freq if on auto
@@ -425,6 +400,171 @@ namespace ZenStatesDebugTool
             flowLayoutPanelCcdActions.Controls.Add(applyBtn);
             flowLayoutPanelCcdActions.Controls.Add(allDecBtn);
             flowLayoutPanelCcdActions.Controls.Add(allIncBtn);
+
+            comboBoxProfiles = new ComboBox
+            {
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Width = 140,
+                Margin = new Padding(12, 0, 6, 0)
+            };
+            comboBoxProfiles.SelectedIndexChanged += ComboBoxProfiles_SelectedIndexChanged;
+
+            Button applyProfileBtn = MakeBarButton("Apply Profile", ButtonApplyProfile_Click);
+            Button saveBtn = MakeBarButton("Save", ButtonSaveProfile_Click);
+            Button saveAsBtn = MakeBarButton("Save As…", ButtonSaveAsProfile_Click);
+            Button deleteBtn = MakeBarButton("Delete", ButtonDeleteProfile_Click);
+
+            flowLayoutPanelCcdActions.Controls.Add(comboBoxProfiles);
+            flowLayoutPanelCcdActions.Controls.Add(applyProfileBtn);
+            flowLayoutPanelCcdActions.Controls.Add(saveBtn);
+            flowLayoutPanelCcdActions.Controls.Add(saveAsBtn);
+            flowLayoutPanelCcdActions.Controls.Add(deleteBtn);
+
+            RefreshProfileList(null);
+        }
+
+        private Button MakeBarButton(string text, EventHandler onClick)
+        {
+            var btn = new Button
+            {
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Margin = new Padding(0, 0, 4, 0),
+                Padding = new Padding(6, 0, 6, 0),
+                Text = text,
+                UseVisualStyleBackColor = true
+            };
+            btn.Click += onClick;
+            return btn;
+        }
+
+        private void RefreshProfileList(string select)
+        {
+            if (comboBoxProfiles == null) return;
+            comboBoxProfiles.SelectedIndexChanged -= ComboBoxProfiles_SelectedIndexChanged;
+            try
+            {
+                comboBoxProfiles.Items.Clear();
+                foreach (var n in profileManager.List())
+                    comboBoxProfiles.Items.Add(n);
+                if (select != null && comboBoxProfiles.Items.Contains(select))
+                    comboBoxProfiles.SelectedItem = select;
+                else if (comboBoxProfiles.Items.Count > 0)
+                    comboBoxProfiles.SelectedIndex = 0;
+            }
+            catch (Exception ex)
+            {
+                HandleError(ex.Message);
+            }
+            finally
+            {
+                comboBoxProfiles.SelectedIndexChanged += ComboBoxProfiles_SelectedIndexChanged;
+            }
+        }
+
+        private string SelectedProfileName => comboBoxProfiles?.SelectedItem as string;
+
+        private void ComboBoxProfiles_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            var name = SelectedProfileName;
+            if (string.IsNullOrEmpty(name)) return;
+            try
+            {
+                var profile = profileManager.Load(name);
+                ApplyProfileToUi(profile);
+                SetStatusText($"Profile '{name}' loaded into the form. Use 'Apply Profile' to apply to CPU.");
+            }
+            catch (Exception ex)
+            {
+                HandleError(ex.Message);
+            }
+        }
+
+        private void ButtonApplyProfile_Click(object sender, EventArgs e)
+        {
+            var name = SelectedProfileName;
+            if (string.IsNullOrEmpty(name)) { HandleError("No profile selected."); return; }
+            try
+            {
+                var result = profileApplier.Apply(profileManager.Load(name), cpu);
+                SetStatusText(result.Success
+                    ? $"Profile '{name}' applied."
+                    : "Apply finished with errors: " + string.Join("; ", result.Messages));
+            }
+            catch (Exception ex)
+            {
+                HandleError(ex.Message);
+            }
+        }
+
+        private void ButtonSaveProfile_Click(object sender, EventArgs e)
+        {
+            var name = SelectedProfileName;
+            if (string.IsNullOrEmpty(name)) { ButtonSaveAsProfile_Click(sender, e); return; }
+            try
+            {
+                profileManager.Save(GatherProfileFromUi(name));
+                SetStatusText($"Profile '{name}' saved.");
+            }
+            catch (Exception ex)
+            {
+                HandleError(ex.Message);
+            }
+        }
+
+        private void ButtonSaveAsProfile_Click(object sender, EventArgs e)
+        {
+            string name = PromptForProfileName();
+            if (name == null) return;
+            if (!ProfileManager.IsValidName(name)) { HandleError("Invalid profile name."); return; }
+            try
+            {
+                profileManager.Save(GatherProfileFromUi(name));
+                RefreshProfileList(name);
+                SetStatusText($"Profile '{name}' saved.");
+            }
+            catch (Exception ex)
+            {
+                HandleError(ex.Message);
+            }
+        }
+
+        private void ButtonDeleteProfile_Click(object sender, EventArgs e)
+        {
+            var name = SelectedProfileName;
+            if (string.IsNullOrEmpty(name)) return;
+            if (MessageBox.Show($"Delete profile '{name}'?", "Confirm",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
+            try
+            {
+                profileManager.Delete(name);
+                RefreshProfileList(null);
+                SetStatusText($"Profile '{name}' deleted.");
+            }
+            catch (Exception ex)
+            {
+                HandleError(ex.Message);
+            }
+        }
+
+        private string PromptForProfileName()
+        {
+            using (var form = new Form())
+            using (var input = new TextBox { Dock = DockStyle.Top })
+            using (var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Dock = DockStyle.Bottom })
+            {
+                form.Text = "Profile name";
+                form.Width = 300;
+                form.Height = 120;
+                form.FormBorderStyle = FormBorderStyle.FixedDialog;
+                form.StartPosition = FormStartPosition.CenterParent;
+                form.AcceptButton = ok;
+                form.Controls.Add(input);
+                form.Controls.Add(ok);
+                return form.ShowDialog(this) == DialogResult.OK && input.Text.Trim().Length > 0
+                    ? input.Text.Trim()
+                    : null;
+            }
         }
 
         private void AllCcdDecrement_Click(object sender, EventArgs e)
@@ -2018,6 +2158,74 @@ namespace ZenStatesDebugTool
                     HandleError("Could not save profile to file!");
                 }
             }
+        }
+
+        private Profile GatherProfileFromUi(string name)
+        {
+            var profile = new Profile { Name = name };
+
+            if (cpu.smu.Rsmu.SMU_MSG_SetDldoPsmMargin != 0)
+            {
+                for (var i = 0; i < GetPhysicalCoreCount(); i++)
+                {
+                    NumericUpDown control = GetCOControl(i);
+                    if (control != null && control.Enabled)
+                        profile.CoMargins[i] = Convert.ToInt32(control.Value);
+                }
+            }
+
+            profile.CurveShaperTiers = new List<CurveShaperTier>
+            {
+                new CurveShaperTier { Low = (int)cs_min_low.Value,  Medium = (int)cs_min_med.Value,  High = (int)cs_min_high.Value },
+                new CurveShaperTier { Low = (int)cs_low_low.Value,  Medium = (int)cs_low_med.Value,  High = (int)cs_low_high.Value },
+                new CurveShaperTier { Low = (int)cs_med_low.Value,  Medium = (int)cs_med_med.Value,  High = (int)cs_med_high.Value },
+                new CurveShaperTier { Low = (int)cs_high_low.Value, Medium = (int)cs_high_med.Value, High = (int)cs_high_high.Value },
+                new CurveShaperTier { Low = (int)cs_max_low.Value,  Medium = (int)cs_max_med.Value,  High = (int)cs_max_high.Value },
+            };
+
+            profile.Fmax = numericUpDownFmax.Value;
+
+            // PBO limits are added to this method in a later task.
+
+            return profile;
+        }
+
+        private void ApplyProfileToUi(Profile profile)
+        {
+            if (profile == null) return;
+
+            if (profile.CoMargins != null && cpu.smu.Rsmu.SMU_MSG_SetDldoPsmMargin != 0)
+            {
+                foreach (var kv in profile.CoMargins)
+                {
+                    NumericUpDown control = GetCOControl(kv.Key);
+                    if (control != null && control.Enabled)
+                        control.Value = Math.Max(control.Minimum, Math.Min(control.Maximum, kv.Value));
+                }
+            }
+
+            if (profile.CurveShaperTiers != null && profile.CurveShaperTiers.Count >= 5)
+            {
+                SetCsTier(cs_min_low,  cs_min_med,  cs_min_high,  profile.CurveShaperTiers[0]);
+                SetCsTier(cs_low_low,  cs_low_med,  cs_low_high,  profile.CurveShaperTiers[1]);
+                SetCsTier(cs_med_low,  cs_med_med,  cs_med_high,  profile.CurveShaperTiers[2]);
+                SetCsTier(cs_high_low, cs_high_med, cs_high_high, profile.CurveShaperTiers[3]);
+                SetCsTier(cs_max_low,  cs_max_med,  cs_max_high,  profile.CurveShaperTiers[4]);
+            }
+
+            if (profile.Fmax.HasValue)
+                numericUpDownFmax.Value =
+                    Math.Max(numericUpDownFmax.Minimum, Math.Min(numericUpDownFmax.Maximum, profile.Fmax.Value));
+
+            // PBO limits are applied to the UI in a later task.
+        }
+
+        private static void SetCsTier(NumericUpDown low, NumericUpDown med, NumericUpDown high, CurveShaperTier tier)
+        {
+            if (tier == null) return;
+            low.Value = Math.Max(low.Minimum, Math.Min(low.Maximum, tier.Low));
+            med.Value = Math.Max(med.Minimum, Math.Min(med.Maximum, tier.Medium));
+            high.Value = Math.Max(high.Minimum, Math.Min(high.Maximum, tier.High));
         }
 
         private List<Tuple<int, int>> LoadCOProfile()

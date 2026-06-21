@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>ProfileCore.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Compile the WinForms-free core directly into the test assembly. -->
+    <Compile Include="..\..\Profiles\Profile.cs" Link="Profile.cs" />
+    <Compile Include="..\..\Profiles\ProfileManager.cs" Link="ProfileManager.cs" />
+  </ItemGroup>
+</Project>
