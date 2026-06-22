@@ -831,10 +831,14 @@ namespace ZenStatesDebugTool
                 HandleError("Error disabling OC Mode!");
         }
 
-        // Manual-OC frequency tab: fixed all-core / per-CCD / per-core clocks. These only
-        // take effect in OC Mode, which overrides PBO / Curve Optimizer auto-boost.
+        // Manual-OC frequency tab. Every Apply writes ALL cores at once (from the per-core
+        // fields) so no core is left undefined - setting one core in OC Mode otherwise drops
+        // the rest to the SMU default (~2500 MHz). OC Mode overrides PBO / Curve Optimizer.
+        private readonly Dictionary<int, NumericUpDown> freqControls = new Dictionary<int, NumericUpDown>();
+
         private void BuildFrequencyTab()
         {
+            freqControls.Clear();
             var tab = new TabPage("Freq (OC)");
 
             var root = new FlowLayoutPanel
@@ -849,36 +853,19 @@ namespace ZenStatesDebugTool
             root.Controls.Add(new Label
             {
                 AutoSize = true,
-                MaximumSize = new Size(330, 0),
+                MaximumSize = new Size(340, 0),
                 ForeColor = Color.Firebrick,
                 Margin = new Padding(0, 0, 0, 8),
-                Text = "Manual OC overrides PBO / Curve Optimizer. Set cores run at a FIXED clock " +
-                       "(no boost, no idle downclock). Clocks set too high can hang or reboot the PC."
+                Text = "Manual OC overrides PBO / Curve Optimizer. Every core runs at the fixed clock " +
+                       "you set below - no boost, no idle downclock. 'Apply all cores' writes ALL cores " +
+                       "at once. Too high can hang or reboot the PC."
             });
 
-            var ocCheck = new CheckBox
+            // Bulk fillers only populate the per-core fields below; nothing is sent until Apply.
+            var allNud = MakeFreqNud();
+            root.Controls.Add(MakeBulkRow("All cores", allNud, () =>
             {
-                Text = "Enable OC Mode (PROCHOT on)",
-                AutoSize = true,
-                Margin = new Padding(0, 0, 0, 8)
-            };
-            ocCheck.CheckedChanged += (s, e) =>
-            {
-                if (ocCheck.Checked) EnableOCMode(true);
-                else DisableOCMode();
-            };
-            root.Controls.Add(ocCheck);
-
-            // Enable OC Mode (via the checkbox, so its state stays in sync) before applying.
-            System.Action ensureOc = () => { if (!ocCheck.Checked) ocCheck.Checked = true; };
-
-            root.Controls.Add(MakeFreqRow("All cores", mhz =>
-            {
-                ensureOc();
-                if (cpu.SetFrequencyAllCore((uint)mhz))
-                    SetStatusText($"All cores set to {mhz} MHz.");
-                else
-                    HandleError("Failed to set all-core frequency. Is OC Mode active and the value in range?");
+                foreach (var n in freqControls.Values) n.Value = allNud.Value;
             }));
 
             int ccdCount = GetCcdCount();
@@ -888,53 +875,57 @@ namespace ZenStatesDebugTool
                 int start = ccd * coresPerCcd;
                 int end = Math.Min(start + coresPerCcd, GetPhysicalCoreCount());
                 if (end <= start) break;
-                int thisCcd = ccd;
-                root.Controls.Add(MakeFreqRow($"CCD {ccd} (cores {start}-{end - 1})", mhz =>
+                var ccdNud = MakeFreqNud();
+                int s2 = start, e2 = end;
+                root.Controls.Add(MakeBulkRow($"CCD {ccd} (cores {start}-{end - 1})", ccdNud, () =>
                 {
-                    ensureOc();
-                    bool ok = true;
-                    for (int c = start; c < end; c++) ok &= SetCoreFrequency(c, mhz);
-                    if (ok)
-                        SetStatusText($"CCD {thisCcd} set to {mhz} MHz.");
-                    else
-                        HandleError($"Failed to set CCD {thisCcd} frequency. Is OC Mode active and the value in range?");
+                    for (int c = s2; c < e2; c++)
+                        if (freqControls.TryGetValue(c, out var n)) n.Value = ccdNud.Value;
                 }));
             }
 
-            var coreRow = new FlowLayoutPanel
+            // Per-core fields in two columns (column-major like the PBO grid).
+            int coreCount = GetPhysicalCoreCount();
+            int rowsPerCol = (coreCount + 1) / 2;
+            var grid = new TableLayoutPanel
+            {
+                ColumnCount = 4,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Margin = new Padding(0, 8, 0, 8)
+            };
+            for (int i = 0; i < coreCount; i++)
+            {
+                var nud = MakeFreqNud();
+                nud.Width = 64;
+                freqControls[i] = nud;
+                int gcol = i < rowsPerCol ? 0 : 2;
+                int grow = i < rowsPerCol ? i : i - rowsPerCol;
+                grid.Controls.Add(new Label { Text = $"Core {i}", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 5, 6, 0) }, gcol, grow);
+                grid.Controls.Add(nud, gcol + 1, grow);
+            }
+            root.Controls.Add(grid);
+
+            var actions = new FlowLayoutPanel
             {
                 FlowDirection = FlowDirection.LeftToRight,
                 AutoSize = true,
                 WrapContents = false,
-                Margin = new Padding(0, 8, 0, 0)
+                Margin = new Padding(0, 4, 0, 0)
             };
-            var coreCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 80, Margin = new Padding(0, 2, 6, 0) };
-            for (int c = 0; c < GetPhysicalCoreCount(); c++) coreCombo.Items.Add($"Core {c}");
-            if (coreCombo.Items.Count > 0) coreCombo.SelectedIndex = 0;
-            var coreNud = MakeFreqNud();
-            var coreBtn = new Button { Text = "Apply", AutoSize = true, UseVisualStyleBackColor = true, Margin = new Padding(6, 0, 0, 0) };
-            coreBtn.Click += (s, e) =>
-            {
-                if (coreCombo.SelectedIndex < 0) return;
-                ensureOc();
-                int mhz = (int)coreNud.Value;
-                int core = coreCombo.SelectedIndex;
-                if (SetCoreFrequency(core, mhz))
-                    SetStatusText($"Core {core} set to {mhz} MHz.");
-                else
-                    HandleError("Failed to set core frequency. Is OC Mode active and the value in range?");
-            };
-            coreRow.Controls.Add(new Label { Text = "Per core", AutoSize = true, Width = 110, Margin = new Padding(0, 6, 8, 0) });
-            coreRow.Controls.Add(coreCombo);
-            coreRow.Controls.Add(coreNud);
-            coreRow.Controls.Add(coreBtn);
-            root.Controls.Add(coreRow);
+            var applyBtn = new Button { Text = "Apply all cores", AutoSize = true, UseVisualStyleBackColor = true, Margin = new Padding(0, 0, 8, 0) };
+            applyBtn.Click += (s, e) => ApplyAllCoreFrequencies();
+            var offBtn = new Button { Text = "Disable OC Mode", AutoSize = true, UseVisualStyleBackColor = true };
+            offBtn.Click += (s, e) => DisableOCMode();
+            actions.Controls.Add(applyBtn);
+            actions.Controls.Add(offBtn);
+            root.Controls.Add(actions);
 
             tab.Controls.Add(root);
             tabControl1.TabPages.Add(tab);
         }
 
-        private FlowLayoutPanel MakeFreqRow(string label, Action<int> onApply)
+        private FlowLayoutPanel MakeBulkRow(string label, NumericUpDown nud, System.Action onSet)
         {
             var row = new FlowLayoutPanel
             {
@@ -943,13 +934,26 @@ namespace ZenStatesDebugTool
                 WrapContents = false,
                 Margin = new Padding(0, 0, 0, 4)
             };
-            row.Controls.Add(new Label { Text = label, AutoSize = true, Width = 110, Margin = new Padding(0, 6, 8, 0) });
-            var nud = MakeFreqNud();
-            var btn = new Button { Text = "Apply", AutoSize = true, UseVisualStyleBackColor = true, Margin = new Padding(6, 0, 0, 0) };
-            btn.Click += (s, e) => onApply((int)nud.Value);
+            row.Controls.Add(new Label { Text = label, AutoSize = true, Width = 130, Margin = new Padding(0, 6, 8, 0) });
             row.Controls.Add(nud);
+            var btn = new Button { Text = "Set", AutoSize = true, UseVisualStyleBackColor = true, Margin = new Padding(6, 0, 0, 0) };
+            btn.Click += (s, e) => onSet();
             row.Controls.Add(btn);
             return row;
+        }
+
+        // Enables OC Mode and writes EVERY core's frequency, so none are left at the default.
+        private void ApplyAllCoreFrequencies()
+        {
+            if (cpu == null || freqControls.Count == 0) return;
+            EnableOCMode(true);
+            bool ok = true;
+            foreach (var kv in freqControls)
+                ok &= SetCoreFrequency(kv.Key, (int)kv.Value.Value);
+            if (ok)
+                SetStatusText($"Applied per-core frequencies to {freqControls.Count} cores (OC Mode on).");
+            else
+                HandleError("Some cores failed to set. Check the values are in range and OC Mode is active.");
         }
 
         private NumericUpDown MakeFreqNud()
@@ -959,7 +963,7 @@ namespace ZenStatesDebugTool
                 Minimum = 400,
                 Maximum = 7000,
                 Increment = 25,
-                Value = 5000,
+                Value = 4000,
                 Width = 70,
                 Margin = new Padding(0, 2, 0, 0)
             };
