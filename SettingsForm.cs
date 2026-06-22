@@ -2823,7 +2823,8 @@ namespace ZenStatesDebugTool
                 SetStatusText("One or more errors occurred while applying Curve Shaper margins.");
             }
 
-            InitCS();
+            // Do NOT re-read here: GetAllCurveShaperMargins returns 0 on this hardware, which
+            // would wipe the values just entered. Keep what was applied (use Refresh to re-read).
         }
     }
 }
