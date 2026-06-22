@@ -15,5 +15,8 @@
     <!-- Compile the WinForms-free core directly into the test assembly. -->
     <Compile Include="..\..\Profiles\Profile.cs" Link="Profile.cs" />
     <Compile Include="..\..\Profiles\ProfileManager.cs" Link="ProfileManager.cs" />
+    <Compile Include="..\..\Utils\UiSettings.cs" Link="UiSettings.cs" />
+    <Compile Include="..\..\Utils\UiSettingsManager.cs" Link="UiSettingsManager.cs" />
+    <Compile Include="..\..\Utils\TabLayout.cs" Link="TabLayout.cs" />
   </ItemGroup>
 </Project>
