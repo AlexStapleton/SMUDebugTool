@@ -387,7 +387,7 @@ namespace ZenStatesDebugTool
         {
             BuildCoActionBar();
             BuildCcdBlocks();
-            BuildPboLimitControls();
+            BuildProfilePanel();
         }
 
         private void BuildCoActionBar()
@@ -433,27 +433,6 @@ namespace ZenStatesDebugTool
             flowLayoutPanelCcdActions.Controls.Add(applyBtn);
             flowLayoutPanelCcdActions.Controls.Add(allDecBtn);
             flowLayoutPanelCcdActions.Controls.Add(allIncBtn);
-
-            comboBoxProfiles = new ComboBox
-            {
-                DropDownStyle = ComboBoxStyle.DropDownList,
-                Width = 140,
-                Margin = new Padding(12, 0, 6, 0)
-            };
-            comboBoxProfiles.SelectedIndexChanged += ComboBoxProfiles_SelectedIndexChanged;
-
-            Button applyProfileBtn = MakeBarButton("Apply Profile", ButtonApplyProfile_Click);
-            Button saveBtn = MakeBarButton("Save", ButtonSaveProfile_Click);
-            Button saveAsBtn = MakeBarButton("Save As…", ButtonSaveAsProfile_Click);
-            Button deleteBtn = MakeBarButton("Delete", ButtonDeleteProfile_Click);
-
-            flowLayoutPanelCcdActions.Controls.Add(comboBoxProfiles);
-            flowLayoutPanelCcdActions.Controls.Add(applyProfileBtn);
-            flowLayoutPanelCcdActions.Controls.Add(saveBtn);
-            flowLayoutPanelCcdActions.Controls.Add(saveAsBtn);
-            flowLayoutPanelCcdActions.Controls.Add(deleteBtn);
-
-            RefreshProfileList(null);
         }
 
         private Button MakeBarButton(string text, EventHandler onClick)
@@ -471,21 +450,62 @@ namespace ZenStatesDebugTool
             return btn;
         }
 
-        private void BuildPboLimitControls()
+        // Dedicated, wrap-enabled panel for profile management + PBO limits, added as its
+        // own row in the PBO table so controls never overflow/clip the narrow tab width.
+        private void BuildProfilePanel()
         {
+            var panel = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = true,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Dock = DockStyle.Fill,
+                Margin = new Padding(3)
+            };
+
+            comboBoxProfiles = new ComboBox
+            {
+                // Editable: type a new name to save, or pick an existing profile to load.
+                DropDownStyle = ComboBoxStyle.DropDown,
+                Width = 130,
+                Margin = new Padding(0, 2, 6, 2)
+            };
+            comboBoxProfiles.SelectedIndexChanged += ComboBoxProfiles_SelectedIndexChanged;
+
+            panel.Controls.Add(new Label { Text = "Profile", AutoSize = true, Margin = new Padding(0, 6, 4, 0) });
+            panel.Controls.Add(comboBoxProfiles);
+            panel.Controls.Add(MakeBarButton("Save", ButtonSaveProfile_Click));
+            panel.Controls.Add(MakeBarButton("Load", ButtonLoadProfile_Click));
+            panel.Controls.Add(MakeBarButton("Apply", ButtonApplyProfile_Click));
+            panel.Controls.Add(MakeBarButton("Delete", ButtonDeleteProfile_Click));
+
             numericUpDownPpt       = MakeLimitBox(0, 1000);
             numericUpDownTdc       = MakeLimitBox(0, 1000);
             numericUpDownEdc       = MakeLimitBox(0, 1000);
             numericUpDownPboScalar = MakeLimitBox(0, 10);
 
-            flowLayoutPanelCcdActions.Controls.Add(new Label { Text = "PPT(W)", AutoSize = true, Margin = new Padding(12, 6, 2, 0) });
-            flowLayoutPanelCcdActions.Controls.Add(numericUpDownPpt);
-            flowLayoutPanelCcdActions.Controls.Add(new Label { Text = "TDC(A)", AutoSize = true, Margin = new Padding(8, 6, 2, 0) });
-            flowLayoutPanelCcdActions.Controls.Add(numericUpDownTdc);
-            flowLayoutPanelCcdActions.Controls.Add(new Label { Text = "EDC(A)", AutoSize = true, Margin = new Padding(8, 6, 2, 0) });
-            flowLayoutPanelCcdActions.Controls.Add(numericUpDownEdc);
-            flowLayoutPanelCcdActions.Controls.Add(new Label { Text = "Scalar", AutoSize = true, Margin = new Padding(8, 6, 2, 0) });
-            flowLayoutPanelCcdActions.Controls.Add(numericUpDownPboScalar);
+            panel.Controls.Add(new Label { Text = "PPT(W)", AutoSize = true, Margin = new Padding(12, 6, 2, 0) });
+            panel.Controls.Add(numericUpDownPpt);
+            panel.Controls.Add(new Label { Text = "TDC(A)", AutoSize = true, Margin = new Padding(8, 6, 2, 0) });
+            panel.Controls.Add(numericUpDownTdc);
+            panel.Controls.Add(new Label { Text = "EDC(A)", AutoSize = true, Margin = new Padding(8, 6, 2, 0) });
+            panel.Controls.Add(numericUpDownEdc);
+            panel.Controls.Add(new Label { Text = "Scalar", AutoSize = true, Margin = new Padding(8, 6, 2, 0) });
+            panel.Controls.Add(numericUpDownPboScalar);
+
+            // The new editable combo replaces the legacy single-profile Save/Load buttons.
+            btnSaveCOProfile.Visible = false;
+            btnLoadCOProfile.Visible = false;
+
+            // Append as a new auto-sized row spanning all 3 columns.
+            int row = tableLayoutPanel12.RowCount;
+            tableLayoutPanel12.RowCount = row + 1;
+            tableLayoutPanel12.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            tableLayoutPanel12.Controls.Add(panel, 0, row);
+            tableLayoutPanel12.SetColumnSpan(panel, 3);
+
+            RefreshProfileList(null);
         }
 
         private NumericUpDown MakeLimitBox(int min, int max)
@@ -508,8 +528,8 @@ namespace ZenStatesDebugTool
                 comboBoxProfiles.Items.Clear();
                 foreach (var n in profileManager.List())
                     comboBoxProfiles.Items.Add(n);
-                if (select != null && comboBoxProfiles.Items.Contains(select))
-                    comboBoxProfiles.SelectedItem = select;
+                if (!string.IsNullOrEmpty(select))
+                    comboBoxProfiles.Text = select;
                 else if (comboBoxProfiles.Items.Count > 0)
                     comboBoxProfiles.SelectedIndex = 0;
             }
@@ -523,17 +543,25 @@ namespace ZenStatesDebugTool
             }
         }
 
-        private string SelectedProfileName => comboBoxProfiles?.SelectedItem as string;
+        // The profile name typed into, or selected from, the combo box.
+        private string CurrentProfileName => (comboBoxProfiles?.Text ?? string.Empty).Trim();
 
         private void ComboBoxProfiles_SelectedIndexChanged(object sender, EventArgs e)
         {
-            var name = SelectedProfileName;
-            if (string.IsNullOrEmpty(name)) return;
+            // Picking an existing profile from the list loads it into the form.
+            var name = comboBoxProfiles.SelectedItem as string;
+            if (!string.IsNullOrEmpty(name))
+                LoadProfileIntoForm(name);
+        }
+
+        private void LoadProfileIntoForm(string name)
+        {
             try
             {
                 var profile = profileManager.Load(name);
+                if (profile == null) { HandleError($"Profile '{name}' not found."); return; }
                 ApplyProfileToUi(profile);
-                SetStatusText($"Profile '{name}' loaded into the form. Use 'Apply Profile' to apply to CPU.");
+                SetStatusText($"Profile '{name}' loaded into the form. Use Apply to send it to the CPU.");
             }
             catch (Exception ex)
             {
@@ -541,13 +569,22 @@ namespace ZenStatesDebugTool
             }
         }
 
+        private void ButtonLoadProfile_Click(object sender, EventArgs e)
+        {
+            var name = CurrentProfileName;
+            if (string.IsNullOrEmpty(name)) { HandleError("Select or type a profile name to load."); return; }
+            LoadProfileIntoForm(name);
+        }
+
         private void ButtonApplyProfile_Click(object sender, EventArgs e)
         {
-            var name = SelectedProfileName;
-            if (string.IsNullOrEmpty(name)) { HandleError("No profile selected."); return; }
+            var name = CurrentProfileName;
+            if (string.IsNullOrEmpty(name)) { HandleError("Select or type a profile name to apply."); return; }
             try
             {
-                var result = profileApplier.Apply(profileManager.Load(name), cpu);
+                var profile = profileManager.Load(name);
+                if (profile == null) { HandleError($"Profile '{name}' not found."); return; }
+                var result = profileApplier.Apply(profile, cpu);
                 SetStatusText(result.Success
                     ? $"Profile '{name}' applied."
                     : "Apply finished with errors: " + string.Join("; ", result.Messages));
@@ -560,24 +597,9 @@ namespace ZenStatesDebugTool
 
         private void ButtonSaveProfile_Click(object sender, EventArgs e)
         {
-            var name = SelectedProfileName;
-            if (string.IsNullOrEmpty(name)) { ButtonSaveAsProfile_Click(sender, e); return; }
-            try
-            {
-                profileManager.Save(GatherProfileFromUi(name));
-                SetStatusText($"Profile '{name}' saved.");
-            }
-            catch (Exception ex)
-            {
-                HandleError(ex.Message);
-            }
-        }
-
-        private void ButtonSaveAsProfile_Click(object sender, EventArgs e)
-        {
-            string name = PromptForProfileName();
-            if (name == null) return;
-            if (!ProfileManager.IsValidName(name)) { HandleError("Invalid profile name."); return; }
+            var name = CurrentProfileName;
+            if (string.IsNullOrEmpty(name)) { HandleError("Type a profile name to save."); return; }
+            if (!ProfileManager.IsValidName(name)) { HandleError("Invalid profile name (avoid \\ / : * ? \" < > |)."); return; }
             try
             {
                 profileManager.Save(GatherProfileFromUi(name));
@@ -592,7 +614,7 @@ namespace ZenStatesDebugTool
 
         private void ButtonDeleteProfile_Click(object sender, EventArgs e)
         {
-            var name = SelectedProfileName;
+            var name = CurrentProfileName;
             if (string.IsNullOrEmpty(name)) return;
             if (MessageBox.Show($"Delete profile '{name}'?", "Confirm",
                     MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
@@ -605,26 +627,6 @@ namespace ZenStatesDebugTool
             catch (Exception ex)
             {
                 HandleError(ex.Message);
-            }
-        }
-
-        private string PromptForProfileName()
-        {
-            using (var form = new Form())
-            using (var input = new TextBox { Dock = DockStyle.Top })
-            using (var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Dock = DockStyle.Bottom })
-            {
-                form.Text = "Profile name";
-                form.Width = 300;
-                form.Height = 120;
-                form.FormBorderStyle = FormBorderStyle.FixedDialog;
-                form.StartPosition = FormStartPosition.CenterParent;
-                form.AcceptButton = ok;
-                form.Controls.Add(input);
-                form.Controls.Add(ok);
-                return form.ShowDialog(this) == DialogResult.OK && input.Text.Trim().Length > 0
-                    ? input.Text.Trim()
-                    : null;
             }
         }
 
