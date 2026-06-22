@@ -39,6 +39,8 @@ namespace ZenStatesDebugTool
         private ProfileManager profileManager;
         private readonly ProfileApplier profileApplier = new ProfileApplier();
         private ComboBox comboBoxProfiles;
+        private ComboBox comboBoxStartupProfile;
+        private NumericUpDown numericUpDownPpt, numericUpDownTdc, numericUpDownEdc, numericUpDownPboScalar;
         private ManagementObject classInstance;
         private string instanceName;
         private ManagementBaseObject pack;
@@ -177,6 +179,7 @@ namespace ZenStatesDebugTool
 
             InitCoreControl();
             InitPboLayout();
+            BuildFrequencyTab();
             InitPBO();
             InitCS();
             PopulateWmiFunctions();
@@ -348,6 +351,39 @@ namespace ZenStatesDebugTool
             }*/
 
             checkBoxApplyCOStartup.Checked = TaskExists("RyzenSDT");
+
+            if (comboBoxStartupProfile == null)
+            {
+                comboBoxStartupProfile = new ComboBox
+                {
+                    DropDownStyle = ComboBoxStyle.DropDownList,
+                    Dock = DockStyle.Fill,
+                    Margin = new Padding(0, 2, 3, 2)
+                };
+                // Sit on the startup-checkbox row: shrink the checkbox span to the first
+                // two columns and drop this selector into the third (instead of the
+                // table's default 0,0 cell, which left it stranded at the top).
+                tableLayoutPanel12.SetColumnSpan(checkBoxApplyCOStartup, 2);
+                tableLayoutPanel12.Controls.Add(comboBoxStartupProfile, 2, 3);
+                comboBoxStartupProfile.SelectedIndexChanged += ComboBoxStartupProfile_SelectedIndexChanged;
+            }
+            comboBoxStartupProfile.SelectedIndexChanged -= ComboBoxStartupProfile_SelectedIndexChanged;
+            try
+            {
+                comboBoxStartupProfile.Items.Clear();
+                foreach (var n in profileManager.List())
+                    comboBoxStartupProfile.Items.Add(n);
+                string startupName = GetStartupProfileFromTask("RyzenSDT");
+                if (startupName != null && comboBoxStartupProfile.Items.Contains(startupName))
+                    comboBoxStartupProfile.SelectedItem = startupName;
+                else if (comboBoxStartupProfile.Items.Count > 0)
+                    comboBoxStartupProfile.SelectedIndex = 0;
+            }
+            finally
+            {
+                comboBoxStartupProfile.SelectedIndexChanged += ComboBoxStartupProfile_SelectedIndexChanged;
+            }
+
             numericUpDownFmax.Value = cpu.GetFMax();
         }
 
@@ -355,72 +391,15 @@ namespace ZenStatesDebugTool
         {
             BuildCoActionBar();
             BuildCcdBlocks();
+            BuildProfilePanel();
         }
 
         private void BuildCoActionBar()
         {
-            // Repurpose flowLayoutPanelCcdActions as the CO-section action bar
+            // The per-column +/- buttons and the Apply/Refresh stack (both built in
+            // BuildCcdBlocks) replace the old horizontal action bar, so hide this row.
             flowLayoutPanelCcdActions.Controls.Clear();
-            flowLayoutPanelCcdActions.WrapContents = false;
-            flowLayoutPanelCcdActions.Visible = true;
-
-            Button applyBtn = new Button
-            {
-                AutoSize = true,
-                AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                Margin = new Padding(0, 0, 6, 0),
-                Padding = new Padding(8, 0, 8, 0),
-                Text = "Apply",
-                UseVisualStyleBackColor = true
-            };
-            applyBtn.Click += ButtonApplyCO_Click;
-
-            Button allDecBtn = new Button
-            {
-                AutoSize = true,
-                AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                Margin = new Padding(0, 0, 2, 0),
-                Padding = new Padding(6, 0, 6, 0),
-                Text = "All \u2212",
-                UseVisualStyleBackColor = true
-            };
-            allDecBtn.Click += AllCcdDecrement_Click;
-
-            Button allIncBtn = new Button
-            {
-                AutoSize = true,
-                AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                Margin = new Padding(0),
-                Padding = new Padding(6, 0, 6, 0),
-                Text = "All +",
-                UseVisualStyleBackColor = true
-            };
-            allIncBtn.Click += AllCcdIncrement_Click;
-
-            flowLayoutPanelCcdActions.Controls.Add(applyBtn);
-            flowLayoutPanelCcdActions.Controls.Add(allDecBtn);
-            flowLayoutPanelCcdActions.Controls.Add(allIncBtn);
-
-            comboBoxProfiles = new ComboBox
-            {
-                DropDownStyle = ComboBoxStyle.DropDownList,
-                Width = 140,
-                Margin = new Padding(12, 0, 6, 0)
-            };
-            comboBoxProfiles.SelectedIndexChanged += ComboBoxProfiles_SelectedIndexChanged;
-
-            Button applyProfileBtn = MakeBarButton("Apply Profile", ButtonApplyProfile_Click);
-            Button saveBtn = MakeBarButton("Save", ButtonSaveProfile_Click);
-            Button saveAsBtn = MakeBarButton("Save As…", ButtonSaveAsProfile_Click);
-            Button deleteBtn = MakeBarButton("Delete", ButtonDeleteProfile_Click);
-
-            flowLayoutPanelCcdActions.Controls.Add(comboBoxProfiles);
-            flowLayoutPanelCcdActions.Controls.Add(applyProfileBtn);
-            flowLayoutPanelCcdActions.Controls.Add(saveBtn);
-            flowLayoutPanelCcdActions.Controls.Add(saveAsBtn);
-            flowLayoutPanelCcdActions.Controls.Add(deleteBtn);
-
-            RefreshProfileList(null);
+            flowLayoutPanelCcdActions.Visible = false;
         }
 
         private Button MakeBarButton(string text, EventHandler onClick)
@@ -438,6 +417,109 @@ namespace ZenStatesDebugTool
             return btn;
         }
 
+        // Profile management + PBO limits live in the right-hand panel (above a shrunk log),
+        // so the narrow PBO tab keeps its clean core-grid layout and nothing clips.
+        private void BuildProfilePanel()
+        {
+            var grid = new TableLayoutPanel
+            {
+                ColumnCount = 2,
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Margin = new Padding(0),
+                Padding = new Padding(3, 3, 3, 3)
+            };
+            grid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+
+            comboBoxProfiles = new ComboBox
+            {
+                // Editable: type a new name to save, or pick an existing profile to load.
+                DropDownStyle = ComboBoxStyle.DropDown,
+                Dock = DockStyle.Fill,
+                Margin = new Padding(0, 2, 0, 4)
+            };
+            comboBoxProfiles.SelectedIndexChanged += ComboBoxProfiles_SelectedIndexChanged;
+
+            var buttonRow = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = true,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Dock = DockStyle.Fill,
+                Margin = new Padding(0, 0, 0, 8)
+            };
+            buttonRow.Controls.Add(MakeBarButton("Save", ButtonSaveProfile_Click));
+            buttonRow.Controls.Add(MakeBarButton("Load", ButtonLoadProfile_Click));
+            buttonRow.Controls.Add(MakeBarButton("Apply", ButtonApplyProfile_Click));
+            buttonRow.Controls.Add(MakeBarButton("Delete", ButtonDeleteProfile_Click));
+
+            numericUpDownPpt       = MakeLimitBox(0, 1000);
+            numericUpDownTdc       = MakeLimitBox(0, 1000);
+            numericUpDownEdc       = MakeLimitBox(0, 1000);
+            numericUpDownPboScalar = MakeLimitBox(0, 10);
+
+            int r = 0;
+            grid.Controls.Add(MakeFieldLabel("Profile"), 0, r);
+            grid.Controls.Add(comboBoxProfiles, 1, r); r++;
+            grid.Controls.Add(buttonRow, 0, r); grid.SetColumnSpan(buttonRow, 2); r++;
+            grid.Controls.Add(MakeFieldLabel("PPT (W)"), 0, r);
+            grid.Controls.Add(numericUpDownPpt, 1, r); r++;
+            grid.Controls.Add(MakeFieldLabel("TDC (A)"), 0, r);
+            grid.Controls.Add(numericUpDownTdc, 1, r); r++;
+            grid.Controls.Add(MakeFieldLabel("EDC (A)"), 0, r);
+            grid.Controls.Add(numericUpDownEdc, 1, r); r++;
+            grid.Controls.Add(MakeFieldLabel("PBO Scalar"), 0, r);
+            grid.Controls.Add(numericUpDownPboScalar, 1, r); r++;
+            grid.RowCount = r;
+            for (int i = 0; i < r; i++)
+                grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            // Re-home the right panel: profile/PBO grid sized to content on top, log fills below.
+            tableLayoutPanel11.SuspendLayout();
+            tableLayoutPanel11.Controls.Remove(textBoxResult);
+            while (tableLayoutPanel11.RowStyles.Count < 2)
+                tableLayoutPanel11.RowStyles.Add(new RowStyle());
+            tableLayoutPanel11.RowCount = 2;
+            tableLayoutPanel11.RowStyles[0] = new RowStyle(SizeType.AutoSize);
+            tableLayoutPanel11.RowStyles[1] = new RowStyle(SizeType.Percent, 100F);
+            tableLayoutPanel11.Controls.Add(grid, 0, 0);
+            textBoxResult.Dock = DockStyle.Fill;
+            tableLayoutPanel11.Controls.Add(textBoxResult, 0, 1);
+            tableLayoutPanel11.ResumeLayout();
+
+            // The named-profile UI here supersedes the legacy single-profile Save/Load buttons.
+            btnSaveCOProfile.Visible = false;
+            btnLoadCOProfile.Visible = false;
+
+            RefreshProfileList(null);
+        }
+
+        private static Label MakeFieldLabel(string text)
+        {
+            return new Label
+            {
+                Text = text,
+                AutoSize = true,
+                Anchor = AnchorStyles.Left,
+                Margin = new Padding(0, 6, 8, 4)
+            };
+        }
+
+        private NumericUpDown MakeLimitBox(int min, int max)
+        {
+            return new NumericUpDown
+            {
+                Minimum = min,
+                Maximum = max,
+                Width = 70,
+                Anchor = AnchorStyles.Left,
+                Margin = new Padding(0, 3, 0, 3)
+            };
+        }
+
         private void RefreshProfileList(string select)
         {
             if (comboBoxProfiles == null) return;
@@ -447,8 +529,8 @@ namespace ZenStatesDebugTool
                 comboBoxProfiles.Items.Clear();
                 foreach (var n in profileManager.List())
                     comboBoxProfiles.Items.Add(n);
-                if (select != null && comboBoxProfiles.Items.Contains(select))
-                    comboBoxProfiles.SelectedItem = select;
+                if (!string.IsNullOrEmpty(select))
+                    comboBoxProfiles.Text = select;
                 else if (comboBoxProfiles.Items.Count > 0)
                     comboBoxProfiles.SelectedIndex = 0;
             }
@@ -462,17 +544,25 @@ namespace ZenStatesDebugTool
             }
         }
 
-        private string SelectedProfileName => comboBoxProfiles?.SelectedItem as string;
+        // The profile name typed into, or selected from, the combo box.
+        private string CurrentProfileName => (comboBoxProfiles?.Text ?? string.Empty).Trim();
 
         private void ComboBoxProfiles_SelectedIndexChanged(object sender, EventArgs e)
         {
-            var name = SelectedProfileName;
-            if (string.IsNullOrEmpty(name)) return;
+            // Picking an existing profile from the list loads it into the form.
+            var name = comboBoxProfiles.SelectedItem as string;
+            if (!string.IsNullOrEmpty(name))
+                LoadProfileIntoForm(name);
+        }
+
+        private void LoadProfileIntoForm(string name)
+        {
             try
             {
                 var profile = profileManager.Load(name);
+                if (profile == null) { HandleError($"Profile '{name}' not found."); return; }
                 ApplyProfileToUi(profile);
-                SetStatusText($"Profile '{name}' loaded into the form. Use 'Apply Profile' to apply to CPU.");
+                SetStatusText($"Profile '{name}' loaded into the form. Use Apply to send it to the CPU.");
             }
             catch (Exception ex)
             {
@@ -480,13 +570,22 @@ namespace ZenStatesDebugTool
             }
         }
 
+        private void ButtonLoadProfile_Click(object sender, EventArgs e)
+        {
+            var name = CurrentProfileName;
+            if (string.IsNullOrEmpty(name)) { HandleError("Select or type a profile name to load."); return; }
+            LoadProfileIntoForm(name);
+        }
+
         private void ButtonApplyProfile_Click(object sender, EventArgs e)
         {
-            var name = SelectedProfileName;
-            if (string.IsNullOrEmpty(name)) { HandleError("No profile selected."); return; }
+            var name = CurrentProfileName;
+            if (string.IsNullOrEmpty(name)) { HandleError("Select or type a profile name to apply."); return; }
             try
             {
-                var result = profileApplier.Apply(profileManager.Load(name), cpu);
+                var profile = profileManager.Load(name);
+                if (profile == null) { HandleError($"Profile '{name}' not found."); return; }
+                var result = profileApplier.Apply(profile, cpu);
                 SetStatusText(result.Success
                     ? $"Profile '{name}' applied."
                     : "Apply finished with errors: " + string.Join("; ", result.Messages));
@@ -499,24 +598,9 @@ namespace ZenStatesDebugTool
 
         private void ButtonSaveProfile_Click(object sender, EventArgs e)
         {
-            var name = SelectedProfileName;
-            if (string.IsNullOrEmpty(name)) { ButtonSaveAsProfile_Click(sender, e); return; }
-            try
-            {
-                profileManager.Save(GatherProfileFromUi(name));
-                SetStatusText($"Profile '{name}' saved.");
-            }
-            catch (Exception ex)
-            {
-                HandleError(ex.Message);
-            }
-        }
-
-        private void ButtonSaveAsProfile_Click(object sender, EventArgs e)
-        {
-            string name = PromptForProfileName();
-            if (name == null) return;
-            if (!ProfileManager.IsValidName(name)) { HandleError("Invalid profile name."); return; }
+            var name = CurrentProfileName;
+            if (string.IsNullOrEmpty(name)) { HandleError("Type a profile name to save."); return; }
+            if (!ProfileManager.IsValidName(name)) { HandleError("Invalid profile name (avoid \\ / : * ? \" < > |)."); return; }
             try
             {
                 profileManager.Save(GatherProfileFromUi(name));
@@ -531,7 +615,7 @@ namespace ZenStatesDebugTool
 
         private void ButtonDeleteProfile_Click(object sender, EventArgs e)
         {
-            var name = SelectedProfileName;
+            var name = CurrentProfileName;
             if (string.IsNullOrEmpty(name)) return;
             if (MessageBox.Show($"Delete profile '{name}'?", "Confirm",
                     MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
@@ -544,26 +628,6 @@ namespace ZenStatesDebugTool
             catch (Exception ex)
             {
                 HandleError(ex.Message);
-            }
-        }
-
-        private string PromptForProfileName()
-        {
-            using (var form = new Form())
-            using (var input = new TextBox { Dock = DockStyle.Top })
-            using (var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Dock = DockStyle.Bottom })
-            {
-                form.Text = "Profile name";
-                form.Width = 300;
-                form.Height = 120;
-                form.FormBorderStyle = FormBorderStyle.FixedDialog;
-                form.StartPosition = FormStartPosition.CenterParent;
-                form.AcceptButton = ok;
-                form.Controls.Add(input);
-                form.Controls.Add(ok);
-                return form.ShowDialog(this) == DialogResult.OK && input.Text.Trim().Length > 0
-                    ? input.Text.Trim()
-                    : null;
             }
         }
 
@@ -592,21 +656,9 @@ namespace ZenStatesDebugTool
 
             int ccdCount = GetCcdCount();
             const int coresPerCcd = 8;
-            const int panelWidth = 160;
-            const int headerHeight = 19;
-            const int rowHeight = 21;
-            const int coresPerRow = 2;
-            // label width wide enough for "C127"
-            const int labelWidth = 30;
-            const int nudWidth = 44;
-            const int colSpacing = 6;
-            // left column x-offsets
-            const int col0LabelX = 2;
-            const int col0NudX = col0LabelX + labelWidth;
-            // right column x-offsets
-            const int col1LabelX = col0NudX + nudWidth + colSpacing;
-            const int col1NudX = col1LabelX + labelWidth;
 
+            // One tall column per CCD: a full-width "+" on top, a "Core N" + spinner per
+            // core, and a full-width "-" at the bottom (bulk adjust the whole CCD).
             for (int ccd = 0; ccd < ccdCount; ccd++)
             {
                 int startCore = ccd * coresPerCcd;
@@ -614,115 +666,94 @@ namespace ZenStatesDebugTool
                 int coresInCcd = endCore - startCore;
                 if (coresInCcd <= 0) break;
 
-                int coreRows = (int)Math.Ceiling(coresInCcd / (double)coresPerRow);
-                int panelHeight = headerHeight + coreRows * rowHeight + 4;
-
-                Panel ccdPanel = new Panel
+                var col = new TableLayoutPanel
                 {
-                    BorderStyle = BorderStyle.FixedSingle,
-                    Margin = new Padding(1),
-                    Name = $"panelCCD_{ccd}",
-                    Size = new Size(panelWidth, panelHeight)
+                    ColumnCount = 2,
+                    AutoSize = true,
+                    AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                    Margin = new Padding(3, 0, 6, 0)
                 };
+                col.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+                col.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
-                // Header label
-                Label ccdLabel = new Label
-                {
-                    AutoSize = false,
-                    BackColor = SystemColors.ControlDark,
-                    ForeColor = SystemColors.ControlLightLight,
-                    Font = new Font("Microsoft Sans Serif", 7.5f, FontStyle.Bold),
-                    Location = new Point(0, 0),
-                    Padding = new Padding(3, 0, 0, 0),
-                    // leave room for the two small buttons on the right
-                    Size = new Size(panelWidth - 36, headerHeight),
-                    Text = $"CCD {ccd}",
-                    TextAlign = ContentAlignment.MiddleLeft
-                };
+                int r = 0;
 
-                // Decrement button
-                Button decBtn = new Button
+                var incBtn = new Button
                 {
-                    BackColor = SystemColors.ControlDark,
-                    FlatStyle = FlatStyle.Flat,
-                    Font = new Font("Microsoft Sans Serif", 7f, FontStyle.Bold),
-                    ForeColor = SystemColors.ControlLightLight,
-                    Location = new Point(panelWidth - 36, 1),
-                    Margin = new Padding(0),
-                    Size = new Size(16, headerHeight - 2),
-                    Tag = Tuple.Create(ccd, -1),
-                    Text = "\u2212",
-                    UseVisualStyleBackColor = false
-                };
-                decBtn.FlatAppearance.BorderSize = 0;
-                decBtn.Click += CcdBulkButton_Click;
-
-                // Increment button
-                Button incBtn = new Button
-                {
-                    BackColor = SystemColors.ControlDark,
-                    FlatStyle = FlatStyle.Flat,
-                    Font = new Font("Microsoft Sans Serif", 7f, FontStyle.Bold),
-                    ForeColor = SystemColors.ControlLightLight,
-                    Location = new Point(panelWidth - 19, 1),
-                    Margin = new Padding(0),
-                    Size = new Size(16, headerHeight - 2),
-                    Tag = Tuple.Create(ccd, 1),
                     Text = "+",
-                    UseVisualStyleBackColor = false
+                    Dock = DockStyle.Fill,
+                    Height = 22,
+                    Margin = new Padding(0, 0, 0, 3),
+                    Tag = Tuple.Create(ccd, 1),
+                    UseVisualStyleBackColor = true
                 };
-                incBtn.FlatAppearance.BorderSize = 0;
                 incBtn.Click += CcdBulkButton_Click;
+                col.Controls.Add(incBtn, 0, r);
+                col.SetColumnSpan(incBtn, 2);
+                r++;
 
-                ccdPanel.Controls.Add(ccdLabel);
-                ccdPanel.Controls.Add(decBtn);
-                ccdPanel.Controls.Add(incBtn);
-
-                // Core grid: column-major (top-to-bottom, then next column)
-                int yOffset = headerHeight + 1;
-                for (int row = 0; row < coreRows; row++)
+                for (int i = 0; i < coresInCcd; i++)
                 {
-                    for (int col = 0; col < coresPerRow; col++)
+                    int coreIndex = startCore + i;
+
+                    var lbl = new Label
                     {
-                        // column-major index: col 0 = cores 0..coreRows-1, col 1 = cores coreRows..end
-                        int localIndex = col * coreRows + row;
-                        if (localIndex >= coresInCcd) continue;
+                        Text = $"Core {coreIndex}",
+                        AutoSize = true,
+                        Anchor = AnchorStyles.Left,
+                        Margin = new Padding(0, 4, 8, 0),
+                        Name = $"labelCO_{coreIndex}"
+                    };
 
-                        int coreIndex = startCore + localIndex;
-                        int labelX = col == 0 ? col0LabelX : col1LabelX;
-                        int nudX = col == 0 ? col0NudX : col1NudX;
+                    var nud = new NumericUpDown
+                    {
+                        Enabled = false,
+                        Maximum = 999,
+                        Minimum = -999,
+                        Width = 52,
+                        Margin = new Padding(0, 1, 0, 1),
+                        Name = $"numericUpDownCO_{coreIndex}",
+                        Tag = coreIndex
+                    };
 
-                        Label lbl = new Label
-                        {
-                            Location = new Point(labelX, yOffset + 3),
-                            Name = $"labelCO_{coreIndex}",
-                            Size = new Size(labelWidth, 14),
-                            Text = $"C{coreIndex}",
-                            TextAlign = ContentAlignment.MiddleLeft
-                        };
-
-                        NumericUpDown nud = new NumericUpDown
-                        {
-                            Enabled = false,
-                            Location = new Point(nudX, yOffset),
-                            Margin = new Padding(0),
-                            Maximum = 999,
-                            Minimum = -999,
-                            Name = $"numericUpDownCO_{coreIndex}",
-                            Size = new Size(nudWidth, 20),
-                            Tag = coreIndex
-                        };
-
-                        ccdPanel.Controls.Add(lbl);
-                        ccdPanel.Controls.Add(nud);
-                        coControls[coreIndex] = nud;
-                    }
-
-                    yOffset += rowHeight;
+                    col.Controls.Add(lbl, 0, r);
+                    col.Controls.Add(nud, 1, r);
+                    coControls[coreIndex] = nud;
+                    r++;
                 }
 
-                flowLayoutPanelCOList.Controls.Add(ccdPanel);
+                var decBtn = new Button
+                {
+                    Text = "\u2212",
+                    Dock = DockStyle.Fill,
+                    Height = 22,
+                    Margin = new Padding(0, 3, 0, 0),
+                    Tag = Tuple.Create(ccd, -1),
+                    UseVisualStyleBackColor = true
+                };
+                decBtn.Click += CcdBulkButton_Click;
+                col.Controls.Add(decBtn, 0, r);
+                col.SetColumnSpan(decBtn, 2);
+
+                flowLayoutPanelCOList.Controls.Add(col);
             }
+
+            // Apply / Refresh stacked to the right of the CCD columns.
+            var actions = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.TopDown,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                WrapContents = false,
+                Margin = new Padding(6, 22, 0, 0)
+            };
+            var applyBtn = new Button { Text = "Apply", AutoSize = true, Margin = new Padding(0, 0, 0, 4), UseVisualStyleBackColor = true };
+            applyBtn.Click += ButtonApplyCO_Click;
+            var refreshBtn = new Button { Text = "Refresh", AutoSize = true, Margin = new Padding(0, 0, 0, 4), UseVisualStyleBackColor = true };
+            refreshBtn.Click += buttonGetCO_Click;
+            actions.Controls.Add(applyBtn);
+            actions.Controls.Add(refreshBtn);
+            flowLayoutPanelCOList.Controls.Add(actions);
 
             flowLayoutPanelCOList.ResumeLayout();
         }
@@ -798,6 +829,161 @@ namespace ZenStatesDebugTool
                 SetStatusText(string.Format("Set OK!"));
             else
                 HandleError("Error disabling OC Mode!");
+        }
+
+        // Manual-OC frequency tab. Every Apply writes ALL cores at once (from the per-core
+        // fields) so no core is left undefined - setting one core in OC Mode otherwise drops
+        // the rest to the SMU default (~2500 MHz). OC Mode overrides PBO / Curve Optimizer.
+        private readonly Dictionary<int, NumericUpDown> freqControls = new Dictionary<int, NumericUpDown>();
+
+        private void BuildFrequencyTab()
+        {
+            freqControls.Clear();
+            var tab = new TabPage("Freq (OC)");
+
+            var root = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.TopDown,
+                WrapContents = false,
+                AutoScroll = true,
+                Padding = new Padding(8)
+            };
+
+            root.Controls.Add(new Label
+            {
+                AutoSize = true,
+                MaximumSize = new Size(340, 0),
+                ForeColor = Color.Firebrick,
+                Margin = new Padding(0, 0, 0, 8),
+                Text = "Manual OC overrides PBO / Curve Optimizer. Every core runs at the fixed clock " +
+                       "you set below - no boost, no idle downclock. 'Apply all cores' writes ALL cores " +
+                       "at once. Too high can hang or reboot the PC."
+            });
+
+            // Bulk fillers only populate the per-core fields below; nothing is sent until Apply.
+            var allNud = MakeFreqNud();
+            root.Controls.Add(MakeBulkRow("All cores", allNud, () =>
+            {
+                foreach (var n in freqControls.Values) n.Value = allNud.Value;
+            }));
+
+            int ccdCount = GetCcdCount();
+            const int coresPerCcd = 8;
+            for (int ccd = 0; ccd < ccdCount; ccd++)
+            {
+                int start = ccd * coresPerCcd;
+                int end = Math.Min(start + coresPerCcd, GetPhysicalCoreCount());
+                if (end <= start) break;
+                var ccdNud = MakeFreqNud();
+                int s2 = start, e2 = end;
+                root.Controls.Add(MakeBulkRow($"CCD {ccd} (cores {start}-{end - 1})", ccdNud, () =>
+                {
+                    for (int c = s2; c < e2; c++)
+                        if (freqControls.TryGetValue(c, out var n)) n.Value = ccdNud.Value;
+                }));
+            }
+
+            // Per-core fields in two columns (column-major like the PBO grid).
+            int coreCount = GetPhysicalCoreCount();
+            int rowsPerCol = (coreCount + 1) / 2;
+            var grid = new TableLayoutPanel
+            {
+                ColumnCount = 4,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Margin = new Padding(0, 8, 0, 8)
+            };
+            for (int i = 0; i < coreCount; i++)
+            {
+                var nud = MakeFreqNud();
+                nud.Width = 64;
+                freqControls[i] = nud;
+                int gcol = i < rowsPerCol ? 0 : 2;
+                int grow = i < rowsPerCol ? i : i - rowsPerCol;
+                grid.Controls.Add(new Label { Text = $"Core {i}", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 5, 6, 0) }, gcol, grow);
+                grid.Controls.Add(nud, gcol + 1, grow);
+            }
+            root.Controls.Add(grid);
+
+            // Action bar docked to the bottom so it stays visible while the list above scrolls.
+            var actionBar = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Bottom,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Padding = new Padding(8, 4, 8, 6)
+            };
+            var applyBtn = new Button { Text = "Apply all cores", AutoSize = false, Size = new Size(115, 26), UseVisualStyleBackColor = true, Margin = new Padding(0, 0, 8, 0) };
+            applyBtn.Click += (s, e) => ApplyAllCoreFrequencies();
+            var offBtn = new Button { Text = "Disable OC Mode", AutoSize = false, Size = new Size(115, 26), UseVisualStyleBackColor = true, Margin = new Padding(0, 0, 0, 0) };
+            offBtn.Click += (s, e) => DisableOCMode();
+            actionBar.Controls.Add(applyBtn);
+            actionBar.Controls.Add(offBtn);
+
+            // Add the fill panel first, then the bottom bar: the bottom bar reserves its
+            // strip and the scrollable content fills the rest above it.
+            tab.Controls.Add(root);
+            tab.Controls.Add(actionBar);
+            tabControl1.TabPages.Add(tab);
+        }
+
+        private FlowLayoutPanel MakeBulkRow(string label, NumericUpDown nud, System.Action onSet)
+        {
+            var row = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.LeftToRight,
+                AutoSize = true,
+                WrapContents = false,
+                Margin = new Padding(0, 0, 0, 4)
+            };
+            row.Controls.Add(new Label { Text = label, AutoSize = true, Width = 130, Margin = new Padding(0, 6, 8, 0) });
+            row.Controls.Add(nud);
+            var btn = new Button { Text = "Set", AutoSize = true, UseVisualStyleBackColor = true, Margin = new Padding(6, 0, 0, 0) };
+            btn.Click += (s, e) => onSet();
+            row.Controls.Add(btn);
+            return row;
+        }
+
+        // Enables OC Mode and writes EVERY core's frequency, so none are left at the default.
+        private void ApplyAllCoreFrequencies()
+        {
+            if (cpu == null || freqControls.Count == 0) return;
+            EnableOCMode(true);
+            bool ok = true;
+            foreach (var kv in freqControls)
+                ok &= SetCoreFrequency(kv.Key, (int)kv.Value.Value);
+            if (ok)
+                SetStatusText($"Applied per-core frequencies to {freqControls.Count} cores (OC Mode on).");
+            else
+                HandleError("Some cores failed to set. Check the values are in range and OC Mode is active.");
+        }
+
+        private NumericUpDown MakeFreqNud()
+        {
+            return new NumericUpDown
+            {
+                Minimum = 400,
+                Maximum = 7000,
+                Increment = 25,
+                Value = 4000,
+                Width = 70,
+                Margin = new Padding(0, 2, 0, 0)
+            };
+        }
+
+        // Same per-core mask the working single-core path uses (see PopulateCCDList /
+        // ApplyFrequencySingleCoreSetting). frequency is in MHz.
+        private bool SetCoreFrequency(int coreIndex, int mhz)
+        {
+            int ccxInCcd = cpu.info.family == Cpu.Family.FAMILY_19H ? 1 : 2;
+            int coresInCcx = 8 / ccxInCcd;
+            int ccd = coreIndex / 8;
+            int ccx = coreIndex / coresInCcx;
+            uint mask = (uint)(((ccd << 4 | ccx % 2 & 15) << 4 | coreIndex % 4 & 15) << 20);
+            return cpu.SetFrequencySingleCore(mask, (uint)mhz);
         }
 
         private void SetStatusText(string status)
@@ -2185,7 +2371,10 @@ namespace ZenStatesDebugTool
 
             profile.Fmax = numericUpDownFmax.Value;
 
-            // PBO limits are added to this method in a later task.
+            profile.PptWatts = (int)numericUpDownPpt.Value;
+            profile.TdcAmps = (int)numericUpDownTdc.Value;
+            profile.EdcAmps = (int)numericUpDownEdc.Value;
+            profile.PboScalar = (int)numericUpDownPboScalar.Value;
 
             return profile;
         }
@@ -2217,7 +2406,14 @@ namespace ZenStatesDebugTool
                 numericUpDownFmax.Value =
                     Math.Max(numericUpDownFmax.Minimum, Math.Min(numericUpDownFmax.Maximum, profile.Fmax.Value));
 
-            // PBO limits are applied to the UI in a later task.
+            if (profile.PptWatts.HasValue)
+                numericUpDownPpt.Value = Math.Max(numericUpDownPpt.Minimum, Math.Min(numericUpDownPpt.Maximum, profile.PptWatts.Value));
+            if (profile.TdcAmps.HasValue)
+                numericUpDownTdc.Value = Math.Max(numericUpDownTdc.Minimum, Math.Min(numericUpDownTdc.Maximum, profile.TdcAmps.Value));
+            if (profile.EdcAmps.HasValue)
+                numericUpDownEdc.Value = Math.Max(numericUpDownEdc.Minimum, Math.Min(numericUpDownEdc.Maximum, profile.EdcAmps.Value));
+            if (profile.PboScalar.HasValue)
+                numericUpDownPboScalar.Value = Math.Max(numericUpDownPboScalar.Minimum, Math.Min(numericUpDownPboScalar.Maximum, profile.PboScalar.Value));
         }
 
         private static void SetCsTier(NumericUpDown low, NumericUpDown med, NumericUpDown high, CurveShaperTier tier)
@@ -2311,30 +2507,24 @@ namespace ZenStatesDebugTool
             }
         }
 
-        static void AddTaskToScheduler(string taskName, string executablePath, int delaySeconds = 0)
+        static void AddTaskToScheduler(string taskName, string executablePath, string profileName, int delaySeconds = 0)
         {
-            // Create a new task service
             using (TaskService taskService = new TaskService())
             {
-                // Create a new task definition
                 TaskDefinition taskDefinition = taskService.NewTask();
 
-                // Set the task properties
-                taskDefinition.RegistrationInfo.Description = "Run Ryzen SMU Debug Tool on user logon to apply CO profile. Automatically created by RyzenSDT. Remove manually or from the checkbox in PBO tab.";
+                taskDefinition.RegistrationInfo.Description = "Run Ryzen SMU Debug Tool on user logon to apply a CO/PBO profile. Automatically created by RyzenSDT. Remove manually or from the checkbox in PBO tab.";
                 taskDefinition.Principal.UserId = WindowsIdentity.GetCurrent().Name;
                 taskDefinition.Principal.RunLevel = TaskRunLevel.Highest;
                 taskDefinition.Principal.LogonType = TaskLogonType.InteractiveToken;
 
-                // Create a trigger that starts the task at logon with a specified delay
                 LogonTrigger logonTrigger = new LogonTrigger();
-                logonTrigger.Delay = TimeSpan.FromSeconds(delaySeconds); // Set the delay
+                logonTrigger.Delay = TimeSpan.FromSeconds(delaySeconds);
                 taskDefinition.Triggers.Add(logonTrigger);
 
-                // Create an action that runs the specified executable
-                ExecAction execAction = new ExecAction(executablePath, "--applyprofile");
+                ExecAction execAction = new ExecAction(executablePath, $"--applyprofile \"{profileName}\"");
                 taskDefinition.Actions.Add(execAction);
 
-                // Register the task in the root folder of the Task Scheduler
                 taskService.RootFolder.RegisterTaskDefinition(taskName, taskDefinition);
             }
         }
@@ -2349,25 +2539,34 @@ namespace ZenStatesDebugTool
             }
         }
 
-        private void SetStartup(bool isChecked = false)
+        private void ComboBoxStartupProfile_SelectedIndexChanged(object sender, EventArgs e)
         {
-            /*using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true))
-            {
-                if (isChecked && key.GetValue("RyzenSDT") == null)
-                {
-                    key.SetValue("RyzenSDT", Application.ExecutablePath + " --applyprofile");
-                }
-                else if (!isChecked && key.GetValue("RyzenSDT") != null)
-                {
-                    key.DeleteValue("RyzenSDT", false);
-                }
-            }*/
+            if (checkBoxApplyCOStartup.Checked) RegisterOrRemoveStartupTask();
+        }
 
-            if (isChecked && !TaskExists("RyzenSDT"))
+        private static string GetStartupProfileFromTask(string taskName)
+        {
+            using (TaskService taskService = new TaskService())
             {
-                AddTaskToScheduler("RyzenSDT", Application.ExecutablePath, 0);
+                Task task = taskService.GetTask(taskName);
+                var exec = task?.Definition.Actions.OfType<ExecAction>().FirstOrDefault();
+                if (exec == null) return null;
+                int idx = exec.Arguments.IndexOf("--applyprofile", StringComparison.OrdinalIgnoreCase);
+                if (idx < 0) return null;
+                string rest = exec.Arguments.Substring(idx + "--applyprofile".Length).Trim().Trim('"');
+                return rest.Length > 0 ? rest : null;
             }
-            else
+        }
+
+        private void RegisterOrRemoveStartupTask()
+        {
+            string name = comboBoxStartupProfile?.SelectedItem as string;
+            if (checkBoxApplyCOStartup.Checked && !string.IsNullOrEmpty(name))
+            {
+                if (TaskExists("RyzenSDT")) RemoveTaskFromScheduler("RyzenSDT");
+                AddTaskToScheduler("RyzenSDT", Application.ExecutablePath, name, 5);
+            }
+            else if (!checkBoxApplyCOStartup.Checked && TaskExists("RyzenSDT"))
             {
                 RemoveTaskFromScheduler("RyzenSDT");
             }
@@ -2375,7 +2574,14 @@ namespace ZenStatesDebugTool
 
         private void CheckBoxApplyCOStartup_CheckedChanged(object sender, EventArgs e)
         {
-            SetStartup((sender as CheckBox).Checked);
+            if (checkBoxApplyCOStartup.Checked
+                && string.IsNullOrEmpty(comboBoxStartupProfile?.SelectedItem as string))
+            {
+                HandleError("Select a startup profile first.");
+                checkBoxApplyCOStartup.Checked = false;
+                return;
+            }
+            RegisterOrRemoveStartupTask();
             textBoxResult.Text = $"Startup settings saved." + Environment.NewLine + textBoxResult.Text;
         }
 
@@ -2617,7 +2823,8 @@ namespace ZenStatesDebugTool
                 SetStatusText("One or more errors occurred while applying Curve Shaper margins.");
             }
 
-            InitCS();
+            // Do NOT re-read here: GetAllCurveShaperMargins returns 0 on this hardware, which
+            // would wipe the values just entered. Keep what was applied (use Refresh to re-read).
         }
     }
 }
