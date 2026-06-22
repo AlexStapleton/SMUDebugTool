@@ -9,13 +9,8 @@ thread**, often in **tight polling loops**, against **unbounded-growth** data st
 
 Status legend: `[ ]` todo · `[~]` in progress · `[x]` done
 
-**Progress (2026-06-22):** Done — #1, #3, #4, #5, #6, #7, #8, #9, #10. Partial — #2
-(SMUMonitor list capped; its 10 ms UI-thread reads remain — a separate dialog from the #6
-startup work, not folded in). Build clean, all 13 tests pass.
-
-**#6 ships unverified on hardware** — the build and the profile unit tests can't exercise
-the WinForms startup/threading path, and there's no Ryzen SMU in the dev environment. Needs
-a smoke test on a real Ryzen box (see the testing notes under #6).
+**Progress (2026-06-22):** All 10 findings done. #6 smoke-tested on real hardware (works).
+Build clean, all 13 tests pass.
 
 ---
 
@@ -44,13 +39,15 @@ Every 500 ms tick:
 drop the nested threads, do all UI mutation inside one `Invoke`. Turns a multi-thread
 O(n²) churn into a single O(n) pass. **Highest-value change in the codebase.**
 
-### [~] 2. `SMUMonitor` — 10 ms UI-thread polling + unbounded list
-**PARTIAL:** List is now capped at `MaxRows = 2000` (oldest rows trimmed), fixing the
-unbounded memory/grid growth. Kept the 10 ms interval (the monitor must catch every SMU
-command). Still outstanding: reads remain on the UI thread, so a driver stall can still
-freeze the window — left for the structural #6-style pass.
+### [x] 2. `SMUMonitor` — 10 ms UI-thread polling + unbounded list
+**DONE:** List capped at `MaxRows = 2000` (oldest rows trimmed). The WinForms timer (which
+ticked on the dialog's message-loop thread) was replaced with a background polling thread:
+the SMU `ReadDword`s now run off the UI thread and only the row append is marshalled back
+via `BeginInvoke`, so the dialog stays responsive even if a read stalls. Start/Stop/Clear
+and form-close manage the thread via a `volatile bool monitorRunning` flag (no `Join` on
+the UI thread). Kept the 10 ms interval (the monitor must catch every SMU command).
 
-**Files:** `SMUMonitor.cs:33-76`
+**Files:** `SMUMonitor.cs`
 
 `MonitorTimer.Interval = 10` (100×/sec). Each tick runs 2–3 synchronous `CPU.ReadDword`
 IO-driver calls **on the UI thread** (`:51-61`). On change, appends to `BindingList list`

@@ -9,7 +9,12 @@ namespace ZenStatesDebugTool
     public partial class SMUMonitor : Form
     {
         private readonly Cpu CPU;
-        readonly System.Windows.Forms.Timer MonitorTimer = new System.Windows.Forms.Timer();
+        // Poll on a background thread instead of a WinForms timer: the SMU reads no longer
+        // run on the dialog's message-loop thread, so the grid/buttons stay responsive even
+        // if a ReadDword stalls. Only the row append is marshalled back to the UI thread.
+        private const int PollIntervalMs = 10;
+        private Thread monitorThread;
+        private volatile bool monitorRunning;
         private readonly BindingList<SmuMonitorItem> list = new BindingList<SmuMonitorItem>();
         private uint prevCmdValue;
         private uint prevArgValue;
@@ -33,8 +38,6 @@ namespace ZenStatesDebugTool
             SMU_ADDR_MSG = addrMsg;
             SMU_ADDR_ARG = addrArg;
             SMU_ADDR_RSP = addrRsp;
-            MonitorTimer.Interval = 10;
-            MonitorTimer.Tick += new EventHandler(MonitorTimer_Tick);
 
             InitializeComponent();
 
@@ -45,57 +48,104 @@ namespace ZenStatesDebugTool
             dataGridView2.DataSource = list;
         }
 
-        private void AddLine()
+        private void StartMonitoring()
         {
-            uint msg = 0;
-            uint rsp = 0;
-            uint arg = 0;
-
-            msg = CPU.ReadDword(SMU_ADDR_MSG);
-            arg = CPU.ReadDword(SMU_ADDR_ARG);
-
-            if (msg != prevCmdValue || arg != prevArgValue)
+            if (monitorRunning) return;
+            monitorRunning = true;
+            monitorThread = new Thread(MonitorLoop)
             {
-                prevCmdValue = msg;
-                prevArgValue = arg;
-                rsp = CPU.ReadDword(SMU_ADDR_RSP);
+                IsBackground = true,
+                Name = "SmuMonitor"
+            };
+            monitorThread.Start();
+        }
 
-                if (rsp != 0)
-                    arg = CPU.ReadDword(SMU_ADDR_ARG);
+        private void StopMonitoring()
+        {
+            // The background thread is IsBackground and exits after its current sleep; no
+            // Join so we never block the UI thread for up to a poll interval.
+            monitorRunning = false;
+        }
 
-                while (list.Count >= MaxRows)
-                    list.RemoveAt(0);
-
-                list.Add(new SmuMonitorItem
+        private void MonitorLoop()
+        {
+            while (monitorRunning)
+            {
+                try
                 {
-                    Cmd = $"0x{msg:X2}",
-                    Arg = $"0x{arg:X8}",
-                    Rsp = $"0x{rsp:X2} {GetSMUStatus.GetByType((SMU.Status)rsp)}"
-                });
+                    PollOnce();
+                }
+                catch
+                {
+                    // A transient read failure shouldn't kill the monitor loop.
+                }
 
-                dataGridView2.FirstDisplayedScrollingRowIndex = list.Count - 1;
+                Thread.Sleep(PollIntervalMs);
             }
         }
 
-        private void MonitorTimer_Tick(object sender, EventArgs e) => AddLine();
+        // Runs on the background thread: all the SMU reads happen here.
+        private void PollOnce()
+        {
+            uint msg = CPU.ReadDword(SMU_ADDR_MSG);
+            uint arg = CPU.ReadDword(SMU_ADDR_ARG);
 
-        private void SMUMonitor_FormClosing(object sender, FormClosingEventArgs e) => MonitorTimer.Stop();
+            if (msg == prevCmdValue && arg == prevArgValue)
+                return;
+
+            prevCmdValue = msg;
+            prevArgValue = arg;
+
+            uint rsp = CPU.ReadDword(SMU_ADDR_RSP);
+            if (rsp != 0)
+                arg = CPU.ReadDword(SMU_ADDR_ARG);
+
+            var item = new SmuMonitorItem
+            {
+                Cmd = $"0x{msg:X2}",
+                Arg = $"0x{arg:X8}",
+                Rsp = $"0x{rsp:X2} {GetSMUStatus.GetByType((SMU.Status)rsp)}"
+            };
+
+            AppendRow(item);
+        }
+
+        // Marshals the row append onto the UI thread, tolerating a closing form.
+        private void AppendRow(SmuMonitorItem item)
+        {
+            if (!IsHandleCreated || IsDisposed) return;
+            try
+            {
+                BeginInvoke((MethodInvoker)delegate
+                {
+                    while (list.Count >= MaxRows)
+                        list.RemoveAt(0);
+
+                    list.Add(item);
+                    dataGridView2.FirstDisplayedScrollingRowIndex = list.Count - 1;
+                });
+            }
+            catch (ObjectDisposedException) { }
+            catch (InvalidOperationException) { }
+        }
+
+        private void SMUMonitor_FormClosing(object sender, FormClosingEventArgs e) => StopMonitoring();
 
         private void ButtonClear_Click(object sender, EventArgs e) => list.Clear();
 
-        private void SMUMonitor_Shown(object sender, EventArgs e) => MonitorTimer.Start();
+        private void SMUMonitor_Shown(object sender, EventArgs e) => StartMonitoring();
 
         private void ButtonApply_Click(object sender, EventArgs e)
         {
-            if (MonitorTimer.Enabled)
+            if (monitorRunning)
             {
-                MonitorTimer.Stop();
+                StopMonitoring();
                 buttonStartStop.Text = "Start";
             }
             else
             {
                 prevCmdValue = 0;
-                MonitorTimer.Start();
+                StartMonitoring();
                 buttonStartStop.Text = "Stop";
             }
         }
