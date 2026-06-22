@@ -906,22 +906,27 @@ namespace ZenStatesDebugTool
             }
             root.Controls.Add(grid);
 
-            var actions = new FlowLayoutPanel
+            // Action bar docked to the bottom so it stays visible while the list above scrolls.
+            var actionBar = new FlowLayoutPanel
             {
+                Dock = DockStyle.Bottom,
                 FlowDirection = FlowDirection.LeftToRight,
-                AutoSize = true,
                 WrapContents = false,
-                Margin = new Padding(0, 4, 0, 0)
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Padding = new Padding(8, 4, 8, 6)
             };
             var applyBtn = new Button { Text = "Apply all cores", AutoSize = true, UseVisualStyleBackColor = true, Margin = new Padding(0, 0, 8, 0) };
             applyBtn.Click += (s, e) => ApplyAllCoreFrequencies();
             var offBtn = new Button { Text = "Disable OC Mode", AutoSize = true, UseVisualStyleBackColor = true };
             offBtn.Click += (s, e) => DisableOCMode();
-            actions.Controls.Add(applyBtn);
-            actions.Controls.Add(offBtn);
-            root.Controls.Add(actions);
+            actionBar.Controls.Add(applyBtn);
+            actionBar.Controls.Add(offBtn);
 
+            // Add the fill panel first, then the bottom bar: the bottom bar reserves its
+            // strip and the scrollable content fills the rest above it.
             tab.Controls.Add(root);
+            tab.Controls.Add(actionBar);
             tabControl1.TabPages.Add(tab);
         }
 
