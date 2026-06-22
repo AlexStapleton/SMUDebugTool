@@ -356,11 +356,14 @@ namespace ZenStatesDebugTool
                 comboBoxStartupProfile = new ComboBox
                 {
                     DropDownStyle = ComboBoxStyle.DropDownList,
-                    Width = 140
+                    Dock = DockStyle.Fill,
+                    Margin = new Padding(0, 2, 3, 2)
                 };
-                comboBoxStartupProfile.Location = new Point(
-                    checkBoxApplyCOStartup.Right + 8, checkBoxApplyCOStartup.Top - 2);
-                checkBoxApplyCOStartup.Parent.Controls.Add(comboBoxStartupProfile);
+                // Sit on the startup-checkbox row: shrink the checkbox span to the first
+                // two columns and drop this selector into the third (instead of the
+                // table's default 0,0 cell, which left it stranded at the top).
+                tableLayoutPanel12.SetColumnSpan(checkBoxApplyCOStartup, 2);
+                tableLayoutPanel12.Controls.Add(comboBoxStartupProfile, 2, 3);
                 comboBoxStartupProfile.SelectedIndexChanged += ComboBoxStartupProfile_SelectedIndexChanged;
             }
             comboBoxStartupProfile.SelectedIndexChanged -= ComboBoxStartupProfile_SelectedIndexChanged;
