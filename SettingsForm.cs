@@ -392,47 +392,10 @@ namespace ZenStatesDebugTool
 
         private void BuildCoActionBar()
         {
-            // Repurpose flowLayoutPanelCcdActions as the CO-section action bar
+            // The per-column +/- buttons and the Apply/Refresh stack (both built in
+            // BuildCcdBlocks) replace the old horizontal action bar, so hide this row.
             flowLayoutPanelCcdActions.Controls.Clear();
-            flowLayoutPanelCcdActions.WrapContents = false;
-            flowLayoutPanelCcdActions.Visible = true;
-
-            Button applyBtn = new Button
-            {
-                AutoSize = true,
-                AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                Margin = new Padding(0, 0, 6, 0),
-                Padding = new Padding(8, 0, 8, 0),
-                Text = "Apply",
-                UseVisualStyleBackColor = true
-            };
-            applyBtn.Click += ButtonApplyCO_Click;
-
-            Button allDecBtn = new Button
-            {
-                AutoSize = true,
-                AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                Margin = new Padding(0, 0, 2, 0),
-                Padding = new Padding(6, 0, 6, 0),
-                Text = "All \u2212",
-                UseVisualStyleBackColor = true
-            };
-            allDecBtn.Click += AllCcdDecrement_Click;
-
-            Button allIncBtn = new Button
-            {
-                AutoSize = true,
-                AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                Margin = new Padding(0),
-                Padding = new Padding(6, 0, 6, 0),
-                Text = "All +",
-                UseVisualStyleBackColor = true
-            };
-            allIncBtn.Click += AllCcdIncrement_Click;
-
-            flowLayoutPanelCcdActions.Controls.Add(applyBtn);
-            flowLayoutPanelCcdActions.Controls.Add(allDecBtn);
-            flowLayoutPanelCcdActions.Controls.Add(allIncBtn);
+            flowLayoutPanelCcdActions.Visible = false;
         }
 
         private Button MakeBarButton(string text, EventHandler onClick)
@@ -689,21 +652,9 @@ namespace ZenStatesDebugTool
 
             int ccdCount = GetCcdCount();
             const int coresPerCcd = 8;
-            const int panelWidth = 160;
-            const int headerHeight = 19;
-            const int rowHeight = 21;
-            const int coresPerRow = 2;
-            // label width wide enough for "C127"
-            const int labelWidth = 30;
-            const int nudWidth = 44;
-            const int colSpacing = 6;
-            // left column x-offsets
-            const int col0LabelX = 2;
-            const int col0NudX = col0LabelX + labelWidth;
-            // right column x-offsets
-            const int col1LabelX = col0NudX + nudWidth + colSpacing;
-            const int col1NudX = col1LabelX + labelWidth;
 
+            // One tall column per CCD: a full-width "+" on top, a "Core N" + spinner per
+            // core, and a full-width "-" at the bottom (bulk adjust the whole CCD).
             for (int ccd = 0; ccd < ccdCount; ccd++)
             {
                 int startCore = ccd * coresPerCcd;
@@ -711,115 +662,94 @@ namespace ZenStatesDebugTool
                 int coresInCcd = endCore - startCore;
                 if (coresInCcd <= 0) break;
 
-                int coreRows = (int)Math.Ceiling(coresInCcd / (double)coresPerRow);
-                int panelHeight = headerHeight + coreRows * rowHeight + 4;
-
-                Panel ccdPanel = new Panel
+                var col = new TableLayoutPanel
                 {
-                    BorderStyle = BorderStyle.FixedSingle,
-                    Margin = new Padding(1),
-                    Name = $"panelCCD_{ccd}",
-                    Size = new Size(panelWidth, panelHeight)
+                    ColumnCount = 2,
+                    AutoSize = true,
+                    AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                    Margin = new Padding(3, 0, 6, 0)
                 };
+                col.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+                col.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
-                // Header label
-                Label ccdLabel = new Label
-                {
-                    AutoSize = false,
-                    BackColor = SystemColors.ControlDark,
-                    ForeColor = SystemColors.ControlLightLight,
-                    Font = new Font("Microsoft Sans Serif", 7.5f, FontStyle.Bold),
-                    Location = new Point(0, 0),
-                    Padding = new Padding(3, 0, 0, 0),
-                    // leave room for the two small buttons on the right
-                    Size = new Size(panelWidth - 36, headerHeight),
-                    Text = $"CCD {ccd}",
-                    TextAlign = ContentAlignment.MiddleLeft
-                };
+                int r = 0;
 
-                // Decrement button
-                Button decBtn = new Button
+                var incBtn = new Button
                 {
-                    BackColor = SystemColors.ControlDark,
-                    FlatStyle = FlatStyle.Flat,
-                    Font = new Font("Microsoft Sans Serif", 7f, FontStyle.Bold),
-                    ForeColor = SystemColors.ControlLightLight,
-                    Location = new Point(panelWidth - 36, 1),
-                    Margin = new Padding(0),
-                    Size = new Size(16, headerHeight - 2),
-                    Tag = Tuple.Create(ccd, -1),
-                    Text = "\u2212",
-                    UseVisualStyleBackColor = false
-                };
-                decBtn.FlatAppearance.BorderSize = 0;
-                decBtn.Click += CcdBulkButton_Click;
-
-                // Increment button
-                Button incBtn = new Button
-                {
-                    BackColor = SystemColors.ControlDark,
-                    FlatStyle = FlatStyle.Flat,
-                    Font = new Font("Microsoft Sans Serif", 7f, FontStyle.Bold),
-                    ForeColor = SystemColors.ControlLightLight,
-                    Location = new Point(panelWidth - 19, 1),
-                    Margin = new Padding(0),
-                    Size = new Size(16, headerHeight - 2),
-                    Tag = Tuple.Create(ccd, 1),
                     Text = "+",
-                    UseVisualStyleBackColor = false
+                    Dock = DockStyle.Fill,
+                    Height = 22,
+                    Margin = new Padding(0, 0, 0, 3),
+                    Tag = Tuple.Create(ccd, 1),
+                    UseVisualStyleBackColor = true
                 };
-                incBtn.FlatAppearance.BorderSize = 0;
                 incBtn.Click += CcdBulkButton_Click;
+                col.Controls.Add(incBtn, 0, r);
+                col.SetColumnSpan(incBtn, 2);
+                r++;
 
-                ccdPanel.Controls.Add(ccdLabel);
-                ccdPanel.Controls.Add(decBtn);
-                ccdPanel.Controls.Add(incBtn);
-
-                // Core grid: column-major (top-to-bottom, then next column)
-                int yOffset = headerHeight + 1;
-                for (int row = 0; row < coreRows; row++)
+                for (int i = 0; i < coresInCcd; i++)
                 {
-                    for (int col = 0; col < coresPerRow; col++)
+                    int coreIndex = startCore + i;
+
+                    var lbl = new Label
                     {
-                        // column-major index: col 0 = cores 0..coreRows-1, col 1 = cores coreRows..end
-                        int localIndex = col * coreRows + row;
-                        if (localIndex >= coresInCcd) continue;
+                        Text = $"Core {coreIndex}",
+                        AutoSize = true,
+                        Anchor = AnchorStyles.Left,
+                        Margin = new Padding(0, 4, 8, 0),
+                        Name = $"labelCO_{coreIndex}"
+                    };
 
-                        int coreIndex = startCore + localIndex;
-                        int labelX = col == 0 ? col0LabelX : col1LabelX;
-                        int nudX = col == 0 ? col0NudX : col1NudX;
+                    var nud = new NumericUpDown
+                    {
+                        Enabled = false,
+                        Maximum = 999,
+                        Minimum = -999,
+                        Width = 52,
+                        Margin = new Padding(0, 1, 0, 1),
+                        Name = $"numericUpDownCO_{coreIndex}",
+                        Tag = coreIndex
+                    };
 
-                        Label lbl = new Label
-                        {
-                            Location = new Point(labelX, yOffset + 3),
-                            Name = $"labelCO_{coreIndex}",
-                            Size = new Size(labelWidth, 14),
-                            Text = $"C{coreIndex}",
-                            TextAlign = ContentAlignment.MiddleLeft
-                        };
-
-                        NumericUpDown nud = new NumericUpDown
-                        {
-                            Enabled = false,
-                            Location = new Point(nudX, yOffset),
-                            Margin = new Padding(0),
-                            Maximum = 999,
-                            Minimum = -999,
-                            Name = $"numericUpDownCO_{coreIndex}",
-                            Size = new Size(nudWidth, 20),
-                            Tag = coreIndex
-                        };
-
-                        ccdPanel.Controls.Add(lbl);
-                        ccdPanel.Controls.Add(nud);
-                        coControls[coreIndex] = nud;
-                    }
-
-                    yOffset += rowHeight;
+                    col.Controls.Add(lbl, 0, r);
+                    col.Controls.Add(nud, 1, r);
+                    coControls[coreIndex] = nud;
+                    r++;
                 }
 
-                flowLayoutPanelCOList.Controls.Add(ccdPanel);
+                var decBtn = new Button
+                {
+                    Text = "\u2212",
+                    Dock = DockStyle.Fill,
+                    Height = 22,
+                    Margin = new Padding(0, 3, 0, 0),
+                    Tag = Tuple.Create(ccd, -1),
+                    UseVisualStyleBackColor = true
+                };
+                decBtn.Click += CcdBulkButton_Click;
+                col.Controls.Add(decBtn, 0, r);
+                col.SetColumnSpan(decBtn, 2);
+
+                flowLayoutPanelCOList.Controls.Add(col);
             }
+
+            // Apply / Refresh stacked to the right of the CCD columns.
+            var actions = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.TopDown,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                WrapContents = false,
+                Margin = new Padding(6, 22, 0, 0)
+            };
+            var applyBtn = new Button { Text = "Apply", AutoSize = true, Margin = new Padding(0, 0, 0, 4), UseVisualStyleBackColor = true };
+            applyBtn.Click += ButtonApplyCO_Click;
+            var refreshBtn = new Button { Text = "Refresh", AutoSize = true, Margin = new Padding(0, 0, 0, 4), UseVisualStyleBackColor = true };
+            refreshBtn.Click += buttonGetCO_Click;
+            actions.Controls.Add(applyBtn);
+            actions.Controls.Add(refreshBtn);
+            flowLayoutPanelCOList.Controls.Add(actions);
 
             flowLayoutPanelCOList.ResumeLayout();
         }
