@@ -170,7 +170,104 @@ namespace ZenStatesDebugTool
             PopulateMailboxesList(comboBoxMailboxSelect.Items);
 
             comboBoxCore.SelectedIndex = 0;
-            double multi = GetCurrentMulti();
+
+            // UI layout is built synchronously here (it only touches in-memory topology),
+            // but the slow SMU command round-trips and WMI enumeration are deferred to a
+            // background load (see OnShown/StartHardwareLoad) so the window appears promptly
+            // instead of freezing while every per-core margin etc. is read on the UI thread.
+            InitCoreControl();
+            InitPboLayout();
+            BuildFrequencyTab();
+            InitStartupProfileUi();
+
+            comboBoxMailboxSelect.SelectedIndex = 0;
+
+            ToolTip toolTip = new ToolTip();
+            toolTip.SetToolTip(checkBoxPROCHOT, "Disables temperature throttling. Can be useful on extreme cooling.");
+
+            SetStatusText($"{cpu.info.codeName}. Loading hardware values...");
+        }
+
+        // The window is shown before any SMU reads happen; once it's visible (handle
+        // created, so Invoke works) we kick off a one-time background load that gathers all
+        // the slow hardware/WMI values off the UI thread and applies them in one marshal.
+        private bool _hardwareLoaded;
+        // True once the background load has applied values. The CO/CS Apply handlers check
+        // this so a click during the brief load can't write default (0) margins to the CPU.
+        private volatile bool _hardwareReady;
+        protected override void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+            if (_hardwareLoaded || cpu == null) return;
+            _hardwareLoaded = true;
+            StartHardwareLoad();
+        }
+
+        private void StartHardwareLoad()
+        {
+            var loader = new Thread(() =>
+            {
+                try
+                {
+                    // Reads only (cpu/WMI), no control access — safe off the UI thread.
+                    double multi = cpu.GetCoreMulti();
+                    Dictionary<int, int> coMargins = GatherCoMargins();
+                    uint fmax = cpu.GetFMax();
+                    uint[] csValues = cpu.GetAllCurveShaperMargins();
+                    double? bclk = cpu.GetBclk();
+                    bool? prochot = cpu.IsProchotEnabled();
+                    List<object> wmiItems = GatherWmiCommands();
+
+                    // Apply everything to the controls in a single UI-thread marshal.
+                    UiInvoke(() =>
+                    {
+                        try
+                        {
+                            ApplyCurrentMulti(multi);
+                            ApplyCoMargins(coMargins);
+                            ApplyFMax(fmax);
+                            ApplyCurveShaperValues(csValues);
+                            ApplyBclk(bclk);
+                            ApplyProchot(prochot);
+                            ApplyWmiCommands(wmiItems);
+                            _hardwareReady = true;
+                            SetStatusText($"{cpu.info.codeName}. Ready.");
+                        }
+                        catch (Exception ex)
+                        {
+                            _hardwareReady = true; // unblock the gated controls regardless
+                            SetStatusText($"Hardware load applied with errors: {ex.Message}");
+                        }
+                    });
+                }
+                catch (Exception ex)
+                {
+                    UiInvoke(() => SetStatusText($"Hardware load error: {ex.Message}"));
+                }
+            })
+            {
+                IsBackground = true,
+                Name = "HardwareLoad"
+            };
+            loader.Start();
+        }
+
+        // Marshals an action onto the UI thread, tolerating a form that's closing.
+        private void UiInvoke(MethodInvoker action)
+        {
+            if (!IsHandleCreated || IsDisposed) return;
+            try { BeginInvoke(action); }
+            catch (ObjectDisposedException) { }
+            catch (InvalidOperationException) { }
+        }
+
+        private void ApplyCurrentMulti(double multi)
+        {
+            if (multi == 0)
+            {
+                SetStatusText("Error getting current frequency!");
+                return;
+            }
             if (multi >= 5.50)
             {
                 int index = (int)((multi - 5.50) / 0.25);
@@ -180,39 +277,23 @@ namespace ZenStatesDebugTool
                     comboBoxSCF.SelectedIndex = index;
                 }
             }
-
-            InitCoreControl();
-            InitPboLayout();
-            BuildFrequencyTab();
-            InitPBO();
-            InitCS();
-            PopulateWmiFunctions();
-
-            double? currentBclk = cpu.GetBclk();
-            labelBCLK.Text = currentBclk + " MHz";
-            numericUpDownBclk.Text = $"{currentBclk}";
-
-            var prochotEnabled = cpu.IsProchotEnabled();
-            checkBoxPROCHOT.Checked = prochotEnabled ?? false;
-            //checkBoxPROCHOT.Enabled = prochotEnabled;
-            //buttonApplyPROCHOT.Enabled = prochotEnabled;
-
-            comboBoxMailboxSelect.SelectedIndex = 0;
-
-            ToolTip toolTip = new ToolTip();
-            toolTip.SetToolTip(checkBoxPROCHOT, "Disables temperature throttling. Can be useful on extreme cooling.");
-
-            SetStatusText($"{cpu.info.codeName}. Ready.");
         }
 
-        // TODO: Detect OC Mode and return PState freq if on auto
-        private double GetCurrentMulti()
+        private void ApplyFMax(uint fmax)
         {
-            double multi = cpu.GetCoreMulti();
-            if (multi == 0)
-                SetStatusText($@"Error getting current frequency!");
+            numericUpDownFmax.Value =
+                Math.Max(numericUpDownFmax.Minimum, Math.Min(numericUpDownFmax.Maximum, fmax));
+        }
 
-            return multi;
+        private void ApplyBclk(double? bclk)
+        {
+            labelBCLK.Text = bclk + " MHz";
+            numericUpDownBclk.Text = $"{bclk}";
+        }
+
+        private void ApplyProchot(bool? prochotEnabled)
+        {
+            checkBoxPROCHOT.Checked = prochotEnabled ?? false;
         }
 
         private void PopulateFrequencyList(ComboBox.ObjectCollection l)
@@ -296,9 +377,18 @@ namespace ZenStatesDebugTool
             return (sbyte)(unchecked(value));
         }
 
+        // Synchronous read+apply, used by the Refresh button (UI thread).
         private void InitCS(bool showStatus = false)
         {
-            uint[] csValues = cpu.GetAllCurveShaperMargins();
+            ApplyCurveShaperValues(cpu.GetAllCurveShaperMargins(), showStatus);
+        }
+
+        // Apply-only half (UI thread); the read is done by the caller so the startup path
+        // can gather it on a background thread.
+        private void ApplyCurveShaperValues(uint[] csValues, bool showStatus = false)
+        {
+            if (csValues == null || csValues.Length < 5)
+                return;
 
             cs_min_low.Value = ConvertMarginToInt(csValues[0] >> 8 & 0xFF);
             cs_min_med.Value = ConvertMarginToInt(csValues[0] >> 16 & 0xFF);
@@ -324,36 +414,79 @@ namespace ZenStatesDebugTool
                 SetStatusText("Curve Shaper margins refreshed.");
         }
 
+        // Full synchronous refresh, used by the CO Refresh/Apply buttons (UI thread).
         private void InitPBO()
         {
-            if (cpu.smu.Rsmu.SMU_MSG_SetDldoPsmMargin != 0)
+            RefreshCoMarginsFromHardware();
+            InitStartupProfileUi();
+            numericUpDownFmax.Value = cpu.GetFMax();
+        }
+
+        // Per-core CO margin read + apply, on the UI thread (button path).
+        private void RefreshCoMarginsFromHardware()
+        {
+            if (cpu.smu.Rsmu.SMU_MSG_SetDldoPsmMargin == 0)
+                return;
+
+            uint cores = (uint)GetPhysicalCoreCount();
+            for (var i = 0; i < cores; i++)
             {
-                uint cores = (uint)GetPhysicalCoreCount();
-                for (var i = 0; i < cores; i++)
-                {
-                    if (IsCoreEnabled(i))
-                    {
-                        NumericUpDown control = GetCOControl(i);
-                        if (control != null)
-                        {
-                            control.Enabled = true;
-                            uint? margin = cpu.GetPsmMarginSingleCore(EncodeCoreMarginBitmask(i));
-                            if (margin != null)
-                                control.Value = Convert.ToDecimal((int)margin);
-                        }
-                    }
-                }
+                if (!IsCoreEnabled((int)i))
+                    continue;
+                NumericUpDown control = GetCOControl((int)i);
+                if (control == null)
+                    continue;
+                control.Enabled = true;
+                uint? margin = cpu.GetPsmMarginSingleCore(EncodeCoreMarginBitmask((int)i));
+                if (margin != null)
+                    control.Value = Convert.ToDecimal((int)margin);
             }
+        }
 
-            /*using (RegistryKey key = Registry.CurrentUser.OpenSubKey
-                ("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true))
+        // Background-safe: reads CO margins for enabled cores into a dictionary, no control
+        // access. Returns an empty dictionary when CO isn't supported.
+        private Dictionary<int, int> GatherCoMargins()
+        {
+            var result = new Dictionary<int, int>();
+            if (cpu.smu.Rsmu.SMU_MSG_SetDldoPsmMargin == 0)
+                return result;
+
+            int cores = GetPhysicalCoreCount();
+            for (int i = 0; i < cores; i++)
             {
-                if (key != null)
-                {
-                    checkBoxApplyCOStartup.Checked = key.GetValue("RyzenSDT") != null;
-                }
-            }*/
+                if (!IsCoreEnabled(i))
+                    continue;
+                uint? margin = cpu.GetPsmMarginSingleCore(EncodeCoreMarginBitmask(i));
+                if (margin != null)
+                    result[i] = (int)margin;
+            }
+            return result;
+        }
 
+        // UI thread: enable the CO spinners for enabled cores and apply the gathered values.
+        private void ApplyCoMargins(Dictionary<int, int> margins)
+        {
+            if (cpu.smu.Rsmu.SMU_MSG_SetDldoPsmMargin == 0)
+                return;
+
+            int cores = GetPhysicalCoreCount();
+            for (int i = 0; i < cores; i++)
+            {
+                if (!IsCoreEnabled(i))
+                    continue;
+                NumericUpDown control = GetCOControl(i);
+                if (control == null)
+                    continue;
+                control.Enabled = true;
+                if (margins.TryGetValue(i, out int value))
+                    control.Value = Math.Max(control.Minimum, Math.Min(control.Maximum, value));
+            }
+        }
+
+        // Startup-profile checkbox + selector (Task Scheduler / file IO; no SMU reads). Built
+        // synchronously so the startup UI is ready immediately.
+        private void InitStartupProfileUi()
+        {
             checkBoxApplyCOStartup.Checked = TaskExists("RyzenSDT");
 
             if (comboBoxStartupProfile == null)
@@ -387,8 +520,6 @@ namespace ZenStatesDebugTool
             {
                 comboBoxStartupProfile.SelectedIndexChanged += ComboBoxStartupProfile_SelectedIndexChanged;
             }
-
-            numericUpDownFmax.Value = cpu.GetFMax();
         }
 
         private void InitPboLayout()
@@ -2103,6 +2234,11 @@ namespace ZenStatesDebugTool
 
         private void ButtonApplyCO_Click(object sender, EventArgs e)
         {
+            if (!_hardwareReady)
+            {
+                SetStatusText("Still loading hardware values, please wait...");
+                return;
+            }
             ApplyCO();
             InitPBO();
         }
@@ -2121,8 +2257,12 @@ namespace ZenStatesDebugTool
             return instanceName;
         }
 
-        private void PopulateWmiFunctions()
+        // Background-safe: runs the WMI enumeration (the slow part) and returns the combo
+        // items to add. No control access. Sets instanceName/classInstance/pack fields, which
+        // are only read by handlers that fire after the load completes.
+        private List<object> GatherWmiCommands()
         {
+            var items = new List<object>();
             try
             {
                 instanceName = GetWmiInstanceName();
@@ -2132,7 +2272,6 @@ namespace ZenStatesDebugTool
 
                 // Get function names with their IDs
                 string[] functionObjects = { "GetObjectID", "GetObjectID2" };
-                var index = 1;
 
                 foreach (var functionObject in functionObjects)
                 {
@@ -2151,29 +2290,38 @@ namespace ZenStatesDebugTool
                                 if (IDString[i] == "")
                                     break;
 
-                                WmiCmdListItem item = new WmiCmdListItem($"{IDString[i] + ": "}{ID[i]:X8}", ID[i], !IDString[i].StartsWith("Get"));
-                                comboBoxAvailableCommands.Items.Add(item);
+                                items.Add(new WmiCmdListItem($"{IDString[i] + ": "}{ID[i]:X8}", ID[i], !IDString[i].StartsWith("Get")));
                             }
                         }
                         else
                         {
-                            comboBoxAvailableCommands.Items.Add("<FAILED>");
+                            items.Add("<FAILED>");
                         }
-
-                        comboBoxAvailableCommands.SelectedIndex = 0;
                     }
                     catch
                     {
                         // ignored
                     }
-
-                    index++;
                 }
             }
             catch
             {
                 // ignored
             }
+            return items;
+        }
+
+        // UI thread: add the gathered WMI commands to the combo. Selecting index 0 triggers
+        // one Getdvalues lookup for the first command (still on the UI thread, but a single
+        // call rather than the whole enumeration).
+        private void ApplyWmiCommands(List<object> items)
+        {
+            if (items == null)
+                return;
+            foreach (var item in items)
+                comboBoxAvailableCommands.Items.Add(item);
+            if (comboBoxAvailableCommands.Items.Count > 0)
+                comboBoxAvailableCommands.SelectedIndex = 0;
         }
 
         private void ComboBoxAvailableCommands_SelectedIndexChanged(object sender, EventArgs e)
@@ -2837,6 +2985,12 @@ namespace ZenStatesDebugTool
 
         private void ButtonApplyCS_Click(object sender, EventArgs e)
         {
+            if (!_hardwareReady)
+            {
+                SetStatusText("Still loading hardware values, please wait...");
+                return;
+            }
+
             var errorMessages = new List<string>();
 
             if (cpu.SetCurveShaperMargin(marginHigh: (int)cs_min_high.Value, marginMedium: (int)cs_min_med.Value, marginLow: (int)cs_min_low.Value, 0) != SMU.Status.OK)

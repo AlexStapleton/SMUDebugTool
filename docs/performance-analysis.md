@@ -9,9 +9,13 @@ thread**, often in **tight polling loops**, against **unbounded-growth** data st
 
 Status legend: `[ ]` todo · `[~]` in progress · `[x]` done
 
-**Progress (2026-06-22):** Done — #1, #3, #4, #5, #7, #8, #9, #10. Partial — #2 (list
-capped; UI-thread reads remain). Deferred — #6 (needs on-hardware testing, see below).
-Build clean, all 13 tests pass.
+**Progress (2026-06-22):** Done — #1, #3, #4, #5, #6, #7, #8, #9, #10. Partial — #2
+(SMUMonitor list capped; its 10 ms UI-thread reads remain — a separate dialog from the #6
+startup work, not folded in). Build clean, all 13 tests pass.
+
+**#6 ships unverified on hardware** — the build and the profile unit tests can't exercise
+the WinForms startup/threading path, and there's no Ryzen SMU in the dev environment. Needs
+a smoke test on a real Ryzen box (see the testing notes under #6).
 
 ---
 
@@ -102,21 +106,28 @@ concatenation. Quadratic in the number of registers scanned.
 
 **Fix:** `StringBuilder`.
 
-### [ ] 6. Startup does large amounts of synchronous hardware IO + WMI on the UI thread
-**DEFERRED — needs on-hardware testing.** `new Cpu()` must run before any topology-dependent
-UI build (`PopulateCCDList`, `InitCoreControl`, `BuildCcdBlocks`, `InitPBO`, `InitCS`), so a
-naive "show window first" doesn't work — the refactor must split UI-construction from
-value-population and marshal a background load back via `Invoke`, and the WMI path
-(`PopulateWmiFunctions` + `ComboBoxAvailableCommands_SelectedIndexChanged`) is entangled.
-A startup-ordering or cross-thread regression here would NOT be caught by the build or the
-profile unit tests, and there's no Ryzen SMU in the dev environment to verify against.
-**Plan:** (1) keep UI-layout build on the UI thread; (2) move the value reads
-(`GetAllCurveShaperMargins`, per-core `GetPsmMarginSingleCore`, `GetBclk`,
-`IsProchotEnabled`, `GetFMax`, `GetCoreMulti`) and `PopulateWmiFunctions` into a background
-load fired from `Shown`, writing results back via `Invoke` with a "loading…" state;
-(3) verify interactively on real hardware. Best done in a session where the app can be run.
+### [x] 6. Startup does large amounts of synchronous hardware IO + WMI on the UI thread
+**DONE (needs on-hardware smoke test).** `InitForm` now builds all UI layout synchronously
+(it only touches in-memory topology) but defers every slow SMU round-trip and the WMI
+enumeration to a one-time background load fired from `OnShown` (handle exists → `Invoke`
+works). The loader gathers values off the UI thread and applies them in a single marshal:
+- Split read/apply: `InitCS` → `ApplyCurveShaperValues`; `InitPBO` → `RefreshCoMarginsFromHardware`
+  + `InitStartupProfileUi`; `GatherCoMargins`/`ApplyCoMargins`; `GatherWmiCommands`/`ApplyWmiCommands`.
+- Deferred reads: `GetCoreMulti`, per-core `GetPsmMarginSingleCore`, `GetFMax`,
+  `GetAllCurveShaperMargins`, `GetBclk`, `IsProchotEnabled`, WMI enumeration.
+- The synchronous refresh-button paths (`InitPBO` via Refresh/Apply CO, `InitCS` via Refresh CS)
+  still work — they just run on the UI thread as before.
+- Safety: window shows a "Loading hardware values…" status, then "Ready."; CO/CS **Apply**
+  buttons are gated behind `_hardwareReady` so a click during the brief load can't write
+  default 0 margins; the apply block is wrapped so a WMI `<FAILED>`-path NRE can't escalate
+  to a thread-exception popup; `ApplyFMax`/`ApplyCurveShaperValues` clamp/guard their inputs.
 
-**Files:** `SettingsForm.cs:51-202` (constructor / InitForm)
+**Smoke test on real hardware:** (1) app launches, window paints immediately, status shows
+"Loading…" then "Ready."; (2) CO margins, Curve Shaper, fmax, BCLK, PROCHOT, ACF/SCF, and
+the WMI command dropdown all populate correctly; (3) Refresh/Apply on the CO, CS, and PBO
+tabs still behave; (4) no crash if you click CO/CS Apply during the first second.
+
+**Files:** `SettingsForm.cs` (`InitForm`, `OnShown`, `StartHardwareLoad`, gather/apply helpers)
 
 `InitForm` serially calls `GetAllCurveShaperMargins`, `GetPsmMarginSingleCore` **per core**
 (`InitPBO:328-341`), `GetBclk`, `IsProchotEnabled`, `GetFMax`, `GetCoreMulti`, plus
