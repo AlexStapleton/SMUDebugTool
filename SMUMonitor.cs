@@ -13,6 +13,9 @@ namespace ZenStatesDebugTool
         private readonly BindingList<SmuMonitorItem> list = new BindingList<SmuMonitorItem>();
         private uint prevCmdValue;
         private uint prevArgValue;
+        // Cap the captured history so a long monitoring session doesn't grow the list (and
+        // the grid) without bound. Oldest rows are trimmed once the cap is reached.
+        private const int MaxRows = 2000;
         private readonly uint SMU_ADDR_MSG;
         private readonly uint SMU_ADDR_ARG;
         private readonly uint SMU_ADDR_RSP;
@@ -60,16 +63,17 @@ namespace ZenStatesDebugTool
                 if (rsp != 0)
                     arg = CPU.ReadDword(SMU_ADDR_ARG);
 
-                //new Thread(() => {
-                    list.Add(new SmuMonitorItem
-                    {
-                        Cmd = $"0x{msg:X2}",
-                        Arg = $"0x{arg:X8}",
-                        Rsp = $"0x{rsp:X2} {GetSMUStatus.GetByType((SMU.Status)rsp)}"
-                    });
+                while (list.Count >= MaxRows)
+                    list.RemoveAt(0);
 
-                    dataGridView2.FirstDisplayedScrollingRowIndex = list.Count - 1;
-                //}).Start();
+                list.Add(new SmuMonitorItem
+                {
+                    Cmd = $"0x{msg:X2}",
+                    Arg = $"0x{arg:X8}",
+                    Rsp = $"0x{rsp:X2} {GetSMUStatus.GetByType((SMU.Status)rsp)}"
+                });
+
+                dataGridView2.FirstDisplayedScrollingRowIndex = list.Count - 1;
             }
         }
 

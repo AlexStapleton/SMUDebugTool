@@ -5,13 +5,21 @@ namespace ZenStatesDebugTool
 {
     public class NUMAUtil
     {
+        // The highest NUMA node number is fixed for the life of the process, so the
+        // P/Invoke result is cached on first access instead of re-queried every read.
+        private ulong? _highestNumaNode;
+
         public ulong HighestNumaNode
         {
             get
             {
-                ulong n = 0;
-                GetNumaHighestNodeNumber(ref n);
-                return n;
+                if (_highestNumaNode == null)
+                {
+                    ulong n = 0;
+                    GetNumaHighestNodeNumber(ref n);
+                    _highestNumaNode = n;
+                }
+                return _highestNumaNode.Value;
             }
         }
 

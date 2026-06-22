@@ -11,6 +11,9 @@ namespace ZenStatesDebugTool
         private readonly Cpu CPU;
         readonly Timer PowerCfgTimer = new Timer();
         private readonly BindingList<PowerMonitorItem> list = new BindingList<PowerMonitorItem>();
+        // Running per-row maximum kept as float, so the refresh never has to parse the
+        // formatted Max string back into a number. Index-aligned with `list`.
+        private float[] maxes;
         private class PowerMonitorItem
         {
             public string Index { get; set; }
@@ -22,10 +25,12 @@ namespace ZenStatesDebugTool
         private void FillInData(float[] table)
         {
             list.Clear();
+            maxes = new float[table.Length];
 
             for (var i = 0; i < table.Length; i++)
             {
                 var valueStr = table[i].ToString("F6", CultureInfo.InvariantCulture);
+                maxes[i] = table[i];
                 list.Add(new PowerMonitorItem
                 {
                     Index = $"{i:D4}",
@@ -38,31 +43,20 @@ namespace ZenStatesDebugTool
 
         private void RefreshData(float[] table)
         {
-            int index = 0;
-
-            foreach (var item in list)
+            for (int index = 0; index < list.Count; index++)
             {
                 var current = table[index];
-                var currentStr = current.ToString("F6", CultureInfo.InvariantCulture);
+                var item = list[index];
 
-                // Update value string
-                item.Value = currentStr;
+                // Current value is (re)formatted each tick; one float format is cheap.
+                item.Value = current.ToString("F6", CultureInfo.InvariantCulture);
 
-                // Parse existing max; if parse fails, treat as 0
-                float existingMax = 0f;
-                if (!string.IsNullOrWhiteSpace(item.Max) &&
-                    !float.TryParse(item.Max, NumberStyles.Float, CultureInfo.InvariantCulture, out existingMax))
+                // Compare against the float max and only reformat the Max string when it grows.
+                if (current > maxes[index])
                 {
-                    existingMax = 0f;
+                    maxes[index] = current;
+                    item.Max = item.Value;
                 }
-
-                // Update max if needed
-                if (current > existingMax)
-                {
-                    item.Max = currentStr;
-                }
-
-                index++;
             }
 
             dataGridView1.Refresh();
@@ -70,7 +64,6 @@ namespace ZenStatesDebugTool
 
         private void PowerCfgTimer_Tick(object sender, EventArgs e)
         {
-            Console.WriteLine("refreshing");
             if (CPU.RefreshPowerTable() == SMU.Status.OK)
                 RefreshData(CPU.powerTable.Table);
         }

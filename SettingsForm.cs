@@ -10,6 +10,7 @@ using System.IO;
 using System.Linq;
 using System.Management;
 using System.Reflection;
+using System.Text;
 using System.Threading;
 using System.Windows.Forms;
 using ZenStates.Core;
@@ -47,6 +48,9 @@ namespace ZenStatesDebugTool
         private const string profilesFolderName = "profiles";
         private const string filename = "co_profile.txt";
         private readonly Dictionary<int, NumericUpDown> coControls = new Dictionary<int, NumericUpDown>();
+        // Cache for the designer's per-core "checkBoxN" controls so we don't do a recursive
+        // Controls.Find tree-walk for every core on each access.
+        private readonly Dictionary<int, CheckBox> coreCheckBoxes = new Dictionary<int, CheckBox>();
 
         public SettingsForm()
         {
@@ -258,7 +262,7 @@ namespace ZenStatesDebugTool
                 {
                     try
                     {
-                        CheckBox control = (CheckBox)Controls.Find($"checkBox{i}", true)[0];
+                        CheckBox control = GetCoreCheckBox((int)i);
                         if (control != null)
                         {
                             control.Enabled = true;
@@ -774,6 +778,19 @@ namespace ZenStatesDebugTool
             return coControls.TryGetValue(coreIndex, out control) ? control : null;
         }
 
+        // Returns the designer's "checkBox{index}" core control (or null), caching the
+        // recursive lookup so it runs at most once per core.
+        private CheckBox GetCoreCheckBox(int index)
+        {
+            if (!coreCheckBoxes.TryGetValue(index, out CheckBox cb))
+            {
+                Control[] found = Controls.Find($"checkBox{index}", true);
+                cb = found.Length > 0 ? found[0] as CheckBox : null;
+                coreCheckBoxes[index] = cb;
+            }
+            return cb;
+        }
+
         private int GetCcdCount()
         {
             if (cpu.info.topology.ccds > 0)
@@ -989,7 +1006,21 @@ namespace ZenStatesDebugTool
         private void SetStatusText(string status)
         {
             labelStatus.Text = status;
+#if DEBUG
             Console.WriteLine($"CMD Status: {status}");
+#endif
+        }
+
+        // Newest-first result log. Prepends and caps total length, so the control can't
+        // grow without bound and each write stays O(cap) instead of O(history) — the old
+        // `textBoxResult.Text = x + textBoxResult.Text` pattern got slower with every entry.
+        private const int MaxResultLength = 100_000;
+        private void PrependResult(string text)
+        {
+            string combined = text + textBoxResult.Text;
+            if (combined.Length > MaxResultLength)
+                combined = combined.Substring(0, MaxResultLength);
+            textBoxResult.Text = combined;
         }
 
         private void SetButtonsState(bool enabled = true)
@@ -1071,7 +1102,7 @@ namespace ZenStatesDebugTool
             responseString += Environment.NewLine;
 
             Console.WriteLine($"Response: {responseString}");
-            textBoxResult.Text = responseString + textBoxResult.Text;
+            PrependResult(responseString);
         }
 
         private void ShowResult(uint data)
@@ -1087,7 +1118,7 @@ namespace ZenStatesDebugTool
                 Environment.NewLine +
                 Environment.NewLine;
             Console.WriteLine($"Response: {responseString}");
-            textBoxResult.Text = responseString + textBoxResult.Text;
+            PrependResult(responseString);
         }
 
         private void ShowResultForm(string title="Result", string result="No result")
@@ -1352,7 +1383,7 @@ namespace ZenStatesDebugTool
 
                         Invoke(new MethodInvoker(delegate
                         {
-                            textBoxResult.Text += responseString;
+                            PrependResult(responseString);
                         }));
 
                         break;
@@ -1784,16 +1815,16 @@ namespace ZenStatesDebugTool
                     SetStatusText("Scanning PCI addresses, please wait...");
                 }));
 
-                string result = "REG         Value(HEX) Value(BIN)" + Environment.NewLine;
+                var result = new StringBuilder("REG         Value(HEX) Value(BIN)" + Environment.NewLine);
 
                 while (startReg <= endReg)
                 {
                     var data = cpu.ReadDword(startReg);
-                    result += $"0x{startReg:X8}: 0x{data:X8} {Convert.ToString(data, 2).PadLeft(32, '0')}" + Environment.NewLine;
+                    result.AppendLine($"0x{startReg:X8}: 0x{data:X8} {Convert.ToString(data, 2).PadLeft(32, '0')}");
                     startReg += 4;
                 }
-                    
-                ShowResultForm("PCI Scan result", result);
+
+                ShowResultForm("PCI Scan result", result.ToString());
             }
             catch (ApplicationException ex)
             {
@@ -1876,7 +1907,7 @@ namespace ZenStatesDebugTool
                     SetStatusText("Scanning MSR range, please wait...");
                 }));
 
-                string result = "MSR         EDX(63-32) EAX(31-0)" + Environment.NewLine;
+                var result = new StringBuilder("MSR         EDX(63-32) EAX(31-0)" + Environment.NewLine);
 
                 TryConvertToUint(textBoxMsrStart.Text, out uint startReg);
                 TryConvertToUint(textBoxMsrEnd.Text, out uint endReg);
@@ -1886,13 +1917,13 @@ namespace ZenStatesDebugTool
                     uint eax = default, edx = default;
                     if (cpu.ReadMsr(startReg, ref eax, ref edx))
                     {
-                        result += $"0x{startReg:X8}: 0x{edx:X8} 0x{eax:X8}" + Environment.NewLine;
+                        result.AppendLine($"0x{startReg:X8}: 0x{edx:X8} 0x{eax:X8}");
                     }
 
                     startReg += 1;
                 }
 
-                ShowResultForm("MSR Scan result", result);
+                ShowResultForm("MSR Scan result", result.ToString());
             }
             catch (ApplicationException ex)
             {
@@ -1944,7 +1975,7 @@ namespace ZenStatesDebugTool
                     SetStatusText("Scanning CPUID range, please wait...");
                 }));
 
-                string result = "CPUID       EAX        EBX        ECX        EDX" + Environment.NewLine;
+                var result = new StringBuilder("CPUID       EAX        EBX        ECX        EDX" + Environment.NewLine);
                 uint LFuncStd = 0, LFuncExt = 0;
                 uint eax = 0, ebx = 0, ecx = 0, edx = 0;
 
@@ -1958,17 +1989,17 @@ namespace ZenStatesDebugTool
                 {
                     var index = 0x00000000 + i;
                     cpu.Cpuid(index, ref eax, ref ebx, ref ecx, ref edx);
-                    result += $"0x{index:X8}: 0x{eax:X8} 0x{ebx:X8} 0x{ecx:X8} 0x{edx:X8}" + Environment.NewLine;
+                    result.AppendLine($"0x{index:X8}: 0x{eax:X8} 0x{ebx:X8} 0x{ecx:X8} 0x{edx:X8}");
                 }
 
                 for (uint i = 0; i <= LFuncExt; ++i)
                 {
                     var index = 0x80000000 + i;
                     cpu.Cpuid(index, ref eax, ref ebx, ref ecx, ref edx);
-                    result += $"0x{index:X8}: 0x{eax:X8} 0x{ebx:X8} 0x{ecx:X8} 0x{edx:X8}" + Environment.NewLine;
+                    result.AppendLine($"0x{index:X8}: 0x{eax:X8} 0x{ebx:X8} 0x{ecx:X8} 0x{edx:X8}");
                 }
 
-                ShowResultForm("CPUID Scan result", result);
+                ShowResultForm("CPUID Scan result", result.ToString());
             }
             catch (ApplicationException ex)
             {
@@ -2222,7 +2253,7 @@ namespace ZenStatesDebugTool
                     text += "0x" + b.ToString("X2") + Environment.NewLine;
                 }
                 text += "------------------------" + Environment.NewLine;
-                textBoxResult.Text = text + Environment.NewLine + textBoxResult.Text;
+                PrependResult(text + Environment.NewLine);
             }
         }
 
@@ -2305,7 +2336,7 @@ namespace ZenStatesDebugTool
 
             Invoke(new MethodInvoker(delegate
             {
-                textBoxResult.Text += responseString;
+                PrependResult(responseString);
             }));
         }
 
@@ -2336,7 +2367,7 @@ namespace ZenStatesDebugTool
 
                         file.WriteLine("fmax={0}", numericUpDownFmax.Value);
 
-                        textBoxResult.Text = $"Profile saved in {defaultsPath}" + Environment.NewLine + textBoxResult.Text;
+                        PrependResult($"Profile saved in {defaultsPath}" + Environment.NewLine);
                     }
                 }
                 catch (Exception)
@@ -2492,7 +2523,7 @@ namespace ZenStatesDebugTool
                 if (numericUpDownFmax.Tag is decimal savedFmax)
                     numericUpDownFmax.Value = savedFmax;
 
-                textBoxResult.Text = $"Saved CO profile loaded from {defaultsPath}" + Environment.NewLine + textBoxResult.Text;
+                PrependResult($"Saved CO profile loaded from {defaultsPath}" + Environment.NewLine);
             }
         }
 
@@ -2582,7 +2613,7 @@ namespace ZenStatesDebugTool
                 return;
             }
             RegisterOrRemoveStartupTask();
-            textBoxResult.Text = $"Startup settings saved." + Environment.NewLine + textBoxResult.Text;
+            PrependResult($"Startup settings saved." + Environment.NewLine);
         }
 
         private void tableLayoutPanel14_Paint(object sender, PaintEventArgs e)
@@ -2597,7 +2628,7 @@ namespace ZenStatesDebugTool
 
             for (int i = 0; i < 8; i++)
             {
-                CheckBox control = (CheckBox)Controls.Find($"checkBox{i}", true)[0];
+                CheckBox control = GetCoreCheckBox(i);
                 if (control != null && control.Enabled)
                 {
                     if (!control.Checked)
@@ -2610,7 +2641,7 @@ namespace ZenStatesDebugTool
 
             for (int i = 0; i < 8; i++)
             {
-                CheckBox control = (CheckBox)Controls.Find($"checkBox{i + 8}", true)[0];
+                CheckBox control = GetCoreCheckBox(i + 8);
                 if (control != null && control.Enabled)
                 {
                     if (!control.Checked)
@@ -2738,7 +2769,7 @@ namespace ZenStatesDebugTool
             new Thread(() => new PCIRangeMonitor(cpu, startAddress, endAddress).ShowDialog()).Start();
         }
 
-        private void ButtonDump_Click(object sender, EventArgs e)
+        private async void ButtonDump_Click(object sender, EventArgs e)
         {
             string name = textBoxDumpName.Text.Trim();
 
@@ -2761,25 +2792,41 @@ namespace ZenStatesDebugTool
                 }
             }
 
+            uint startAddress, endAddress;
             try
             {
-                TryConvertToUint(textBoxDumpStartAddress.Text.Trim(), out uint startAddress);
-                TryConvertToUint(textBoxDumpEndAddress.Text.Trim(), out uint endAddress);
-
-                SetStatusText(name + ": Dumping memory, please wait...");
-                
-                var stopwatch = Stopwatch.StartNew();
-                MemoryDumper.Dump32BitAddressSpaceAsBytes(name, startAddress, endAddress);
-                stopwatch.Stop();
-                
-                string elapsedTime = $"{stopwatch.Elapsed.TotalSeconds:F2}";
-                SetStatusText(name + $": Dump complete. ({elapsedTime}s)");
-                MessageBox.Show($"Memory dump completed successfully to file: {name}\n\nTime elapsed: {elapsedTime}s", "Dump Complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                TryConvertToUint(textBoxDumpStartAddress.Text.Trim(), out startAddress);
+                TryConvertToUint(textBoxDumpEndAddress.Text.Trim(), out endAddress);
             }
             catch (Exception)
             {
                 HandleError("Invalid address format!");
                 return;
+            }
+
+            // Run the dump off the UI thread so the window stays responsive; disable the
+            // button to prevent a second dump to the same file while one is in progress.
+            var button = sender as Control;
+            if (button != null) button.Enabled = false;
+            try
+            {
+                SetStatusText(name + ": Dumping memory, please wait...");
+
+                var stopwatch = Stopwatch.StartNew();
+                await System.Threading.Tasks.Task.Run(() => MemoryDumper.Dump32BitAddressSpaceAsBytes(name, startAddress, endAddress));
+                stopwatch.Stop();
+
+                string elapsedTime = $"{stopwatch.Elapsed.TotalSeconds:F2}";
+                SetStatusText(name + $": Dump complete. ({elapsedTime}s)");
+                MessageBox.Show($"Memory dump completed successfully to file: {name}\n\nTime elapsed: {elapsedTime}s", "Dump Complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                HandleError($"Memory dump failed: {ex.Message}");
+            }
+            finally
+            {
+                if (button != null) button.Enabled = true;
             }
         }
 
@@ -2819,7 +2866,7 @@ namespace ZenStatesDebugTool
             }
             else
             {
-                textBoxResult.Text = string.Join(Environment.NewLine, errorMessages) + Environment.NewLine + textBoxResult.Text;
+                PrependResult(string.Join(Environment.NewLine, errorMessages) + Environment.NewLine);
                 SetStatusText("One or more errors occurred while applying Curve Shaper margins.");
             }
 
