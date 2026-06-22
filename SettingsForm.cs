@@ -916,9 +916,9 @@ namespace ZenStatesDebugTool
                 AutoSizeMode = AutoSizeMode.GrowAndShrink,
                 Padding = new Padding(8, 4, 8, 6)
             };
-            var applyBtn = new Button { Text = "Apply all cores", AutoSize = true, UseVisualStyleBackColor = true, Margin = new Padding(0, 0, 8, 0) };
+            var applyBtn = new Button { Text = "Apply all cores", AutoSize = false, Size = new Size(115, 26), UseVisualStyleBackColor = true, Margin = new Padding(0, 0, 8, 0) };
             applyBtn.Click += (s, e) => ApplyAllCoreFrequencies();
-            var offBtn = new Button { Text = "Disable OC Mode", AutoSize = true, UseVisualStyleBackColor = true };
+            var offBtn = new Button { Text = "Disable OC Mode", AutoSize = false, Size = new Size(115, 26), UseVisualStyleBackColor = true, Margin = new Padding(0, 0, 0, 0) };
             offBtn.Click += (s, e) => DisableOCMode();
             actionBar.Controls.Add(applyBtn);
             actionBar.Controls.Add(offBtn);
