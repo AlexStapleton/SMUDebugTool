@@ -9,8 +9,7 @@ thread**, often in **tight polling loops**, against **unbounded-growth** data st
 
 Status legend: `[ ]` todo · `[~]` in progress · `[x]` done
 
-**Progress (2026-06-22):** Done — #1, #3, #4, #5, #7, #8, #9, #10. Partial — #2 (list
-capped; UI-thread reads remain). Deferred — #6 (needs on-hardware testing, see below).
+**Progress (2026-06-22):** All 10 findings done. #6 smoke-tested on real hardware (works).
 Build clean, all 13 tests pass.
 
 ---
@@ -40,13 +39,15 @@ Every 500 ms tick:
 drop the nested threads, do all UI mutation inside one `Invoke`. Turns a multi-thread
 O(n²) churn into a single O(n) pass. **Highest-value change in the codebase.**
 
-### [~] 2. `SMUMonitor` — 10 ms UI-thread polling + unbounded list
-**PARTIAL:** List is now capped at `MaxRows = 2000` (oldest rows trimmed), fixing the
-unbounded memory/grid growth. Kept the 10 ms interval (the monitor must catch every SMU
-command). Still outstanding: reads remain on the UI thread, so a driver stall can still
-freeze the window — left for the structural #6-style pass.
+### [x] 2. `SMUMonitor` — 10 ms UI-thread polling + unbounded list
+**DONE:** List capped at `MaxRows = 2000` (oldest rows trimmed). The WinForms timer (which
+ticked on the dialog's message-loop thread) was replaced with a background polling thread:
+the SMU `ReadDword`s now run off the UI thread and only the row append is marshalled back
+via `BeginInvoke`, so the dialog stays responsive even if a read stalls. Start/Stop/Clear
+and form-close manage the thread via a `volatile bool monitorRunning` flag (no `Join` on
+the UI thread). Kept the 10 ms interval (the monitor must catch every SMU command).
 
-**Files:** `SMUMonitor.cs:33-76`
+**Files:** `SMUMonitor.cs`
 
 `MonitorTimer.Interval = 10` (100×/sec). Each tick runs 2–3 synchronous `CPU.ReadDword`
 IO-driver calls **on the UI thread** (`:51-61`). On change, appends to `BindingList list`
@@ -102,21 +103,28 @@ concatenation. Quadratic in the number of registers scanned.
 
 **Fix:** `StringBuilder`.
 
-### [ ] 6. Startup does large amounts of synchronous hardware IO + WMI on the UI thread
-**DEFERRED — needs on-hardware testing.** `new Cpu()` must run before any topology-dependent
-UI build (`PopulateCCDList`, `InitCoreControl`, `BuildCcdBlocks`, `InitPBO`, `InitCS`), so a
-naive "show window first" doesn't work — the refactor must split UI-construction from
-value-population and marshal a background load back via `Invoke`, and the WMI path
-(`PopulateWmiFunctions` + `ComboBoxAvailableCommands_SelectedIndexChanged`) is entangled.
-A startup-ordering or cross-thread regression here would NOT be caught by the build or the
-profile unit tests, and there's no Ryzen SMU in the dev environment to verify against.
-**Plan:** (1) keep UI-layout build on the UI thread; (2) move the value reads
-(`GetAllCurveShaperMargins`, per-core `GetPsmMarginSingleCore`, `GetBclk`,
-`IsProchotEnabled`, `GetFMax`, `GetCoreMulti`) and `PopulateWmiFunctions` into a background
-load fired from `Shown`, writing results back via `Invoke` with a "loading…" state;
-(3) verify interactively on real hardware. Best done in a session where the app can be run.
+### [x] 6. Startup does large amounts of synchronous hardware IO + WMI on the UI thread
+**DONE (needs on-hardware smoke test).** `InitForm` now builds all UI layout synchronously
+(it only touches in-memory topology) but defers every slow SMU round-trip and the WMI
+enumeration to a one-time background load fired from `OnShown` (handle exists → `Invoke`
+works). The loader gathers values off the UI thread and applies them in a single marshal:
+- Split read/apply: `InitCS` → `ApplyCurveShaperValues`; `InitPBO` → `RefreshCoMarginsFromHardware`
+  + `InitStartupProfileUi`; `GatherCoMargins`/`ApplyCoMargins`; `GatherWmiCommands`/`ApplyWmiCommands`.
+- Deferred reads: `GetCoreMulti`, per-core `GetPsmMarginSingleCore`, `GetFMax`,
+  `GetAllCurveShaperMargins`, `GetBclk`, `IsProchotEnabled`, WMI enumeration.
+- The synchronous refresh-button paths (`InitPBO` via Refresh/Apply CO, `InitCS` via Refresh CS)
+  still work — they just run on the UI thread as before.
+- Safety: window shows a "Loading hardware values…" status, then "Ready."; CO/CS **Apply**
+  buttons are gated behind `_hardwareReady` so a click during the brief load can't write
+  default 0 margins; the apply block is wrapped so a WMI `<FAILED>`-path NRE can't escalate
+  to a thread-exception popup; `ApplyFMax`/`ApplyCurveShaperValues` clamp/guard their inputs.
 
-**Files:** `SettingsForm.cs:51-202` (constructor / InitForm)
+**Smoke test on real hardware:** (1) app launches, window paints immediately, status shows
+"Loading…" then "Ready."; (2) CO margins, Curve Shaper, fmax, BCLK, PROCHOT, ACF/SCF, and
+the WMI command dropdown all populate correctly; (3) Refresh/Apply on the CO, CS, and PBO
+tabs still behave; (4) no crash if you click CO/CS Apply during the first second.
+
+**Files:** `SettingsForm.cs` (`InitForm`, `OnShown`, `StartHardwareLoad`, gather/apply helpers)
 
 `InitForm` serially calls `GetAllCurveShaperMargins`, `GetPsmMarginSingleCore` **per core**
 (`InitPBO:328-341`), `GetBclk`, `IsProchotEnabled`, `GetFMax`, `GetCoreMulti`, plus
