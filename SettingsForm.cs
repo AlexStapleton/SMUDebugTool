@@ -474,30 +474,23 @@ namespace ZenStatesDebugTool
             }
         }
 
-        // Startup-profile checkbox + selector (Task Scheduler / file IO; no SMU reads). Built
-        // synchronously so the startup UI is ready immediately.
+        // Reads the startup-profile state (Task Scheduler / file IO; no SMU reads) into the
+        // checkbox + dropdown. The controls themselves live in the right-hand profile panel
+        // (built by BuildProfilePanel), so this only populates them.
+        // While true, the checkbox/dropdown handlers do NOT touch the scheduled task. Set
+        // during programmatic population (startup and the "Re-read from CPU" refresh) so the
+        // registered startup profile only changes in response to real user interaction.
+        private bool _suppressStartupTaskUpdates;
+
         private void InitStartupProfileUi()
         {
-            checkBoxApplyCOStartup.Checked = TaskExists("RyzenSDT");
-
-            if (comboBoxStartupProfile == null)
-            {
-                comboBoxStartupProfile = new ComboBox
-                {
-                    DropDownStyle = ComboBoxStyle.DropDownList,
-                    Dock = DockStyle.Fill,
-                    Margin = new Padding(0, 2, 3, 2)
-                };
-                // Sit on the startup-checkbox row: shrink the checkbox span to the first
-                // two columns and drop this selector into the third (instead of the
-                // table's default 0,0 cell, which left it stranded at the top).
-                tableLayoutPanel12.SetColumnSpan(checkBoxApplyCOStartup, 2);
-                tableLayoutPanel12.Controls.Add(comboBoxStartupProfile, 2, 3);
-                comboBoxStartupProfile.SelectedIndexChanged += ComboBoxStartupProfile_SelectedIndexChanged;
-            }
-            comboBoxStartupProfile.SelectedIndexChanged -= ComboBoxStartupProfile_SelectedIndexChanged;
+            _suppressStartupTaskUpdates = true;
             try
             {
+                checkBoxApplyCOStartup.Checked = TaskExists("RyzenSDT");
+
+                if (comboBoxStartupProfile == null) return;
+
                 comboBoxStartupProfile.Items.Clear();
                 foreach (var n in profileManager.List())
                     comboBoxStartupProfile.Items.Add(n);
@@ -509,7 +502,7 @@ namespace ZenStatesDebugTool
             }
             finally
             {
-                comboBoxStartupProfile.SelectedIndexChanged += ComboBoxStartupProfile_SelectedIndexChanged;
+                _suppressStartupTaskUpdates = false;
             }
         }
 
@@ -599,6 +592,44 @@ namespace ZenStatesDebugTool
             grid.Controls.Add(numericUpDownEdc, 1, r); r++;
             grid.Controls.Add(MakeFieldLabel("PBO Scalar"), 0, r);
             grid.Controls.Add(numericUpDownPboScalar, 1, r); r++;
+
+            // Startup-profile setting, moved here from the PBO tab so it sits with the other
+            // profile controls (and is visible on every tab, not just PBO). It goes in its own
+            // single-column sub-panel that spans both grid columns, so the checkbox, label and
+            // full-width dropdown all stack flush-left instead of fighting the label/field
+            // column split used by the rows above.
+            comboBoxStartupProfile = new ComboBox
+            {
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Dock = DockStyle.Fill,
+                Margin = new Padding(0, 2, 0, 4)
+            };
+            comboBoxStartupProfile.SelectedIndexChanged += ComboBoxStartupProfile_SelectedIndexChanged;
+
+            tableLayoutPanel12.Controls.Remove(checkBoxApplyCOStartup);
+            checkBoxApplyCOStartup.Dock = DockStyle.None;
+            checkBoxApplyCOStartup.Anchor = AnchorStyles.Left;
+            checkBoxApplyCOStartup.Margin = new Padding(0, 0, 0, 4);
+
+            var startupPanel = new TableLayoutPanel
+            {
+                ColumnCount = 1,
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Margin = new Padding(0, 8, 0, 0)
+            };
+            startupPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            startupPanel.Controls.Add(checkBoxApplyCOStartup, 0, 0);
+            startupPanel.Controls.Add(MakeFieldLabel("Startup profile"), 0, 1);
+            startupPanel.Controls.Add(comboBoxStartupProfile, 0, 2);
+            startupPanel.RowCount = 3;
+            for (int i = 0; i < 3; i++)
+                startupPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            grid.Controls.Add(startupPanel, 0, r);
+            grid.SetColumnSpan(startupPanel, 2); r++;
+
             grid.RowCount = r;
             for (int i = 0; i < r; i++)
                 grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -864,7 +895,7 @@ namespace ZenStatesDebugTool
                 flowLayoutPanelCOList.Controls.Add(col);
             }
 
-            // Apply / Refresh stacked to the right of the CCD columns.
+            // Apply / Re-read stacked to the right of the CCD columns.
             var actions = new FlowLayoutPanel
             {
                 FlowDirection = FlowDirection.TopDown,
@@ -875,7 +906,7 @@ namespace ZenStatesDebugTool
             };
             var applyBtn = new Button { Text = "Apply", AutoSize = true, Margin = new Padding(0, 0, 0, 4), UseVisualStyleBackColor = true };
             applyBtn.Click += ButtonApplyCO_Click;
-            var refreshBtn = new Button { Text = "Refresh", AutoSize = true, Margin = new Padding(0, 0, 0, 4), UseVisualStyleBackColor = true };
+            var refreshBtn = new Button { Text = "Re-read from CPU", AutoSize = true, Margin = new Padding(0, 0, 0, 4), UseVisualStyleBackColor = true };
             refreshBtn.Click += buttonGetCO_Click;
             actions.Controls.Add(applyBtn);
             actions.Controls.Add(refreshBtn);
@@ -2680,6 +2711,7 @@ namespace ZenStatesDebugTool
 
         private void ComboBoxStartupProfile_SelectedIndexChanged(object sender, EventArgs e)
         {
+            if (_suppressStartupTaskUpdates) return;
             if (checkBoxApplyCOStartup.Checked) RegisterOrRemoveStartupTask();
         }
 
@@ -2713,6 +2745,7 @@ namespace ZenStatesDebugTool
 
         private void CheckBoxApplyCOStartup_CheckedChanged(object sender, EventArgs e)
         {
+            if (_suppressStartupTaskUpdates) return;
             if (checkBoxApplyCOStartup.Checked
                 && string.IsNullOrEmpty(comboBoxStartupProfile?.SelectedItem as string))
             {
