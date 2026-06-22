@@ -128,7 +128,10 @@
     </Compile>
     <Compile Include="Utils\WmiCmdListItem.cs" />
     <Compile Include="Utils\SmuAddressSet.cs" />
-    <Compile Include="Utils\CoreListItem.cs" />
+    <Compile Include="Utils\UiSettings.cs" />
+    <Compile Include="Utils\UiSettingsManager.cs" />
+    <Compile Include="Utils\TabLayout.cs" />
+    <Compile Include="Utils\TabVisibilityController.cs" />
     <Compile Include="ResultForm.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -136,7 +139,6 @@
       <DependentUpon>ResultForm.cs</DependentUpon>
     </Compile>
     <Compile Include="Utils\MailboxListItem.cs" />
-    <Compile Include="Utils\FrequencyListItem.cs" />
     <Compile Include="Utils\NUMAUtil.cs" />
     <Compile Include="SettingsForm.cs">
       <SubType>Form</SubType>
