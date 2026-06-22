@@ -179,6 +179,7 @@ namespace ZenStatesDebugTool
 
             InitCoreControl();
             InitPboLayout();
+            BuildFrequencyTab();
             InitPBO();
             InitCS();
             PopulateWmiFunctions();
@@ -828,6 +829,152 @@ namespace ZenStatesDebugTool
                 SetStatusText(string.Format("Set OK!"));
             else
                 HandleError("Error disabling OC Mode!");
+        }
+
+        // Manual-OC frequency tab: fixed all-core / per-CCD / per-core clocks. These only
+        // take effect in OC Mode, which overrides PBO / Curve Optimizer auto-boost.
+        private void BuildFrequencyTab()
+        {
+            var tab = new TabPage("Freq (OC)");
+
+            var root = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.TopDown,
+                WrapContents = false,
+                AutoScroll = true,
+                Padding = new Padding(8)
+            };
+
+            root.Controls.Add(new Label
+            {
+                AutoSize = true,
+                MaximumSize = new Size(330, 0),
+                ForeColor = Color.Firebrick,
+                Margin = new Padding(0, 0, 0, 8),
+                Text = "Manual OC overrides PBO / Curve Optimizer. Set cores run at a FIXED clock " +
+                       "(no boost, no idle downclock). Clocks set too high can hang or reboot the PC."
+            });
+
+            var ocCheck = new CheckBox
+            {
+                Text = "Enable OC Mode (PROCHOT on)",
+                AutoSize = true,
+                Margin = new Padding(0, 0, 0, 8)
+            };
+            ocCheck.CheckedChanged += (s, e) =>
+            {
+                if (ocCheck.Checked) EnableOCMode(true);
+                else DisableOCMode();
+            };
+            root.Controls.Add(ocCheck);
+
+            // Enable OC Mode (via the checkbox, so its state stays in sync) before applying.
+            System.Action ensureOc = () => { if (!ocCheck.Checked) ocCheck.Checked = true; };
+
+            root.Controls.Add(MakeFreqRow("All cores", mhz =>
+            {
+                ensureOc();
+                if (cpu.SetFrequencyAllCore((uint)mhz))
+                    SetStatusText($"All cores set to {mhz} MHz.");
+                else
+                    HandleError("Failed to set all-core frequency. Is OC Mode active and the value in range?");
+            }));
+
+            int ccdCount = GetCcdCount();
+            const int coresPerCcd = 8;
+            for (int ccd = 0; ccd < ccdCount; ccd++)
+            {
+                int start = ccd * coresPerCcd;
+                int end = Math.Min(start + coresPerCcd, GetPhysicalCoreCount());
+                if (end <= start) break;
+                int thisCcd = ccd;
+                root.Controls.Add(MakeFreqRow($"CCD {ccd} (cores {start}-{end - 1})", mhz =>
+                {
+                    ensureOc();
+                    bool ok = true;
+                    for (int c = start; c < end; c++) ok &= SetCoreFrequency(c, mhz);
+                    if (ok)
+                        SetStatusText($"CCD {thisCcd} set to {mhz} MHz.");
+                    else
+                        HandleError($"Failed to set CCD {thisCcd} frequency. Is OC Mode active and the value in range?");
+                }));
+            }
+
+            var coreRow = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.LeftToRight,
+                AutoSize = true,
+                WrapContents = false,
+                Margin = new Padding(0, 8, 0, 0)
+            };
+            var coreCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 80, Margin = new Padding(0, 2, 6, 0) };
+            for (int c = 0; c < GetPhysicalCoreCount(); c++) coreCombo.Items.Add($"Core {c}");
+            if (coreCombo.Items.Count > 0) coreCombo.SelectedIndex = 0;
+            var coreNud = MakeFreqNud();
+            var coreBtn = new Button { Text = "Apply", AutoSize = true, UseVisualStyleBackColor = true, Margin = new Padding(6, 0, 0, 0) };
+            coreBtn.Click += (s, e) =>
+            {
+                if (coreCombo.SelectedIndex < 0) return;
+                ensureOc();
+                int mhz = (int)coreNud.Value;
+                int core = coreCombo.SelectedIndex;
+                if (SetCoreFrequency(core, mhz))
+                    SetStatusText($"Core {core} set to {mhz} MHz.");
+                else
+                    HandleError("Failed to set core frequency. Is OC Mode active and the value in range?");
+            };
+            coreRow.Controls.Add(new Label { Text = "Per core", AutoSize = true, Width = 110, Margin = new Padding(0, 6, 8, 0) });
+            coreRow.Controls.Add(coreCombo);
+            coreRow.Controls.Add(coreNud);
+            coreRow.Controls.Add(coreBtn);
+            root.Controls.Add(coreRow);
+
+            tab.Controls.Add(root);
+            tabControl1.TabPages.Add(tab);
+        }
+
+        private FlowLayoutPanel MakeFreqRow(string label, Action<int> onApply)
+        {
+            var row = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.LeftToRight,
+                AutoSize = true,
+                WrapContents = false,
+                Margin = new Padding(0, 0, 0, 4)
+            };
+            row.Controls.Add(new Label { Text = label, AutoSize = true, Width = 110, Margin = new Padding(0, 6, 8, 0) });
+            var nud = MakeFreqNud();
+            var btn = new Button { Text = "Apply", AutoSize = true, UseVisualStyleBackColor = true, Margin = new Padding(6, 0, 0, 0) };
+            btn.Click += (s, e) => onApply((int)nud.Value);
+            row.Controls.Add(nud);
+            row.Controls.Add(btn);
+            return row;
+        }
+
+        private NumericUpDown MakeFreqNud()
+        {
+            return new NumericUpDown
+            {
+                Minimum = 400,
+                Maximum = 7000,
+                Increment = 25,
+                Value = 5000,
+                Width = 70,
+                Margin = new Padding(0, 2, 0, 0)
+            };
+        }
+
+        // Same per-core mask the working single-core path uses (see PopulateCCDList /
+        // ApplyFrequencySingleCoreSetting). frequency is in MHz.
+        private bool SetCoreFrequency(int coreIndex, int mhz)
+        {
+            int ccxInCcd = cpu.info.family == Cpu.Family.FAMILY_19H ? 1 : 2;
+            int coresInCcx = 8 / ccxInCcd;
+            int ccd = coreIndex / 8;
+            int ccx = coreIndex / coresInCcx;
+            uint mask = (uint)(((ccd << 4 | ccx % 2 & 15) << 4 | coreIndex % 4 & 15) << 20);
+            return cpu.SetFrequencySingleCore(mask, (uint)mhz);
         }
 
         private void SetStatusText(string status)
