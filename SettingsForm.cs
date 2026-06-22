@@ -450,62 +450,95 @@ namespace ZenStatesDebugTool
             return btn;
         }
 
-        // Dedicated, wrap-enabled panel for profile management + PBO limits, added as its
-        // own row in the PBO table so controls never overflow/clip the narrow tab width.
+        // Profile management + PBO limits live in the right-hand panel (above a shrunk log),
+        // so the narrow PBO tab keeps its clean core-grid layout and nothing clips.
         private void BuildProfilePanel()
         {
-            var panel = new FlowLayoutPanel
+            var grid = new TableLayoutPanel
+            {
+                ColumnCount = 2,
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Margin = new Padding(0),
+                Padding = new Padding(3, 3, 3, 3)
+            };
+            grid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+
+            comboBoxProfiles = new ComboBox
+            {
+                // Editable: type a new name to save, or pick an existing profile to load.
+                DropDownStyle = ComboBoxStyle.DropDown,
+                Dock = DockStyle.Fill,
+                Margin = new Padding(0, 2, 0, 4)
+            };
+            comboBoxProfiles.SelectedIndexChanged += ComboBoxProfiles_SelectedIndexChanged;
+
+            var buttonRow = new FlowLayoutPanel
             {
                 FlowDirection = FlowDirection.LeftToRight,
                 WrapContents = true,
                 AutoSize = true,
                 AutoSizeMode = AutoSizeMode.GrowAndShrink,
                 Dock = DockStyle.Fill,
-                Margin = new Padding(3)
+                Margin = new Padding(0, 0, 0, 8)
             };
-
-            comboBoxProfiles = new ComboBox
-            {
-                // Editable: type a new name to save, or pick an existing profile to load.
-                DropDownStyle = ComboBoxStyle.DropDown,
-                Width = 130,
-                Margin = new Padding(0, 2, 6, 2)
-            };
-            comboBoxProfiles.SelectedIndexChanged += ComboBoxProfiles_SelectedIndexChanged;
-
-            panel.Controls.Add(new Label { Text = "Profile", AutoSize = true, Margin = new Padding(0, 6, 4, 0) });
-            panel.Controls.Add(comboBoxProfiles);
-            panel.Controls.Add(MakeBarButton("Save", ButtonSaveProfile_Click));
-            panel.Controls.Add(MakeBarButton("Load", ButtonLoadProfile_Click));
-            panel.Controls.Add(MakeBarButton("Apply", ButtonApplyProfile_Click));
-            panel.Controls.Add(MakeBarButton("Delete", ButtonDeleteProfile_Click));
+            buttonRow.Controls.Add(MakeBarButton("Save", ButtonSaveProfile_Click));
+            buttonRow.Controls.Add(MakeBarButton("Load", ButtonLoadProfile_Click));
+            buttonRow.Controls.Add(MakeBarButton("Apply", ButtonApplyProfile_Click));
+            buttonRow.Controls.Add(MakeBarButton("Delete", ButtonDeleteProfile_Click));
 
             numericUpDownPpt       = MakeLimitBox(0, 1000);
             numericUpDownTdc       = MakeLimitBox(0, 1000);
             numericUpDownEdc       = MakeLimitBox(0, 1000);
             numericUpDownPboScalar = MakeLimitBox(0, 10);
 
-            panel.Controls.Add(new Label { Text = "PPT(W)", AutoSize = true, Margin = new Padding(12, 6, 2, 0) });
-            panel.Controls.Add(numericUpDownPpt);
-            panel.Controls.Add(new Label { Text = "TDC(A)", AutoSize = true, Margin = new Padding(8, 6, 2, 0) });
-            panel.Controls.Add(numericUpDownTdc);
-            panel.Controls.Add(new Label { Text = "EDC(A)", AutoSize = true, Margin = new Padding(8, 6, 2, 0) });
-            panel.Controls.Add(numericUpDownEdc);
-            panel.Controls.Add(new Label { Text = "Scalar", AutoSize = true, Margin = new Padding(8, 6, 2, 0) });
-            panel.Controls.Add(numericUpDownPboScalar);
+            int r = 0;
+            grid.Controls.Add(MakeFieldLabel("Profile"), 0, r);
+            grid.Controls.Add(comboBoxProfiles, 1, r); r++;
+            grid.Controls.Add(buttonRow, 0, r); grid.SetColumnSpan(buttonRow, 2); r++;
+            grid.Controls.Add(MakeFieldLabel("PPT (W)"), 0, r);
+            grid.Controls.Add(numericUpDownPpt, 1, r); r++;
+            grid.Controls.Add(MakeFieldLabel("TDC (A)"), 0, r);
+            grid.Controls.Add(numericUpDownTdc, 1, r); r++;
+            grid.Controls.Add(MakeFieldLabel("EDC (A)"), 0, r);
+            grid.Controls.Add(numericUpDownEdc, 1, r); r++;
+            grid.Controls.Add(MakeFieldLabel("PBO Scalar"), 0, r);
+            grid.Controls.Add(numericUpDownPboScalar, 1, r); r++;
+            grid.RowCount = r;
+            for (int i = 0; i < r; i++)
+                grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
-            // The new editable combo replaces the legacy single-profile Save/Load buttons.
+            // Re-home the right panel: profile/PBO grid sized to content on top, log fills below.
+            tableLayoutPanel11.SuspendLayout();
+            tableLayoutPanel11.Controls.Remove(textBoxResult);
+            while (tableLayoutPanel11.RowStyles.Count < 2)
+                tableLayoutPanel11.RowStyles.Add(new RowStyle());
+            tableLayoutPanel11.RowCount = 2;
+            tableLayoutPanel11.RowStyles[0] = new RowStyle(SizeType.AutoSize);
+            tableLayoutPanel11.RowStyles[1] = new RowStyle(SizeType.Percent, 100F);
+            tableLayoutPanel11.Controls.Add(grid, 0, 0);
+            textBoxResult.Dock = DockStyle.Fill;
+            tableLayoutPanel11.Controls.Add(textBoxResult, 0, 1);
+            tableLayoutPanel11.ResumeLayout();
+
+            // The named-profile UI here supersedes the legacy single-profile Save/Load buttons.
             btnSaveCOProfile.Visible = false;
             btnLoadCOProfile.Visible = false;
 
-            // Append as a new auto-sized row spanning all 3 columns.
-            int row = tableLayoutPanel12.RowCount;
-            tableLayoutPanel12.RowCount = row + 1;
-            tableLayoutPanel12.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            tableLayoutPanel12.Controls.Add(panel, 0, row);
-            tableLayoutPanel12.SetColumnSpan(panel, 3);
-
             RefreshProfileList(null);
+        }
+
+        private static Label MakeFieldLabel(string text)
+        {
+            return new Label
+            {
+                Text = text,
+                AutoSize = true,
+                Anchor = AnchorStyles.Left,
+                Margin = new Padding(0, 6, 8, 4)
+            };
         }
 
         private NumericUpDown MakeLimitBox(int min, int max)
@@ -514,8 +547,9 @@ namespace ZenStatesDebugTool
             {
                 Minimum = min,
                 Maximum = max,
-                Width = 60,
-                Margin = new Padding(0, 3, 0, 0)
+                Width = 70,
+                Anchor = AnchorStyles.Left,
+                Margin = new Padding(0, 3, 0, 3)
             };
         }
 
