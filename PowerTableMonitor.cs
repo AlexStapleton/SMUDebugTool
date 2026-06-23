@@ -64,14 +64,20 @@ namespace ZenStatesDebugTool
 
         private void PowerCfgTimer_Tick(object sender, EventArgs e)
         {
-            if (CPU.RefreshPowerTable() == SMU.Status.OK)
+            // RefreshPowerTable is an SMU transaction; serialize it against other readers.
+            SMU.Status status;
+            lock (Hardware.Sync)
+                status = CPU.RefreshPowerTable();
+
+            if (status == SMU.Status.OK)
                 RefreshData(CPU.powerTable.Table);
         }
 
         public PowerTableMonitor(Cpu cpu)
         {
             CPU = cpu;
-            cpu.RefreshPowerTable();
+            lock (Hardware.Sync)
+                cpu.RefreshPowerTable();
 
             PowerCfgTimer.Interval = 2000;
             PowerCfgTimer.Tick += new EventHandler(PowerCfgTimer_Tick);
@@ -86,6 +92,7 @@ namespace ZenStatesDebugTool
         private void PowerTableMonitor_FormClosing(object sender, FormClosingEventArgs e)
         {
             PowerCfgTimer.Stop();
+            PowerCfgTimer.Dispose();
             //CPU.powerTable.Dispose();
         }
 

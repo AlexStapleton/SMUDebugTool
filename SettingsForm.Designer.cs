@@ -1709,7 +1709,6 @@ namespace ZenStatesDebugTool
             this.tableLayoutPanel14.RowStyles.Add(new System.Windows.Forms.RowStyle());
             this.tableLayoutPanel14.Size = new System.Drawing.Size(334, 37);
             this.tableLayoutPanel14.TabIndex = 3;
-            this.tableLayoutPanel14.Paint += new System.Windows.Forms.PaintEventHandler(this.tableLayoutPanel14_Paint);
             // 
             // label50
             // 

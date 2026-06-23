@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      # Builds the legacy WinForms exe and the SDK-style test project, then runs
+      # the unit tests (Profile/ProfileManager/TabLayout/UiSettings core logic).
+      - name: Restore
+        run: dotnet restore ZenStatesDebugTool.sln
+
+      - name: Build
+        run: dotnet build ZenStatesDebugTool.sln --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test ZenStatesDebugTool.sln --configuration Release --no-build --verbosity normal
