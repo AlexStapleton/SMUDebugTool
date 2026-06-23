@@ -18,8 +18,6 @@ using ZenStatesDebugTool.Profiles;
 using ZenStatesDebugTool.Properties;
 using Application = System.Windows.Forms.Application;
 using static ZenStates.Core.Cpu;
-using Microsoft.Win32.TaskScheduler;
-using System.Security.Principal;
 using System.Diagnostics;
 using ZenStates.Core.Drivers;
 
@@ -178,7 +176,12 @@ namespace ZenStatesDebugTool
             comboBoxMailboxSelect.SelectedIndex = 0;
 
             ToolTip toolTip = new ToolTip();
-            toolTip.SetToolTip(checkBoxPROCHOT, "Disables temperature throttling. Can be useful on extreme cooling.");
+            // Checked state mirrors IsProchotEnabled(): checked = PROCHOT (thermal
+            // throttling) ON. Uncheck + Apply to DISABLE throttling. The old tooltip read
+            // as "checking disables throttling", which is backwards.
+            toolTip.SetToolTip(checkBoxPROCHOT,
+                "Checked = PROCHOT (thermal throttling) enabled. Uncheck and click Apply to " +
+                "disable temperature throttling - useful on extreme cooling, but risks overheating.");
 
             // Built last, after every tab (including the dynamic Freq (OC) tab) exists, so the
             // controller's canonical list and View menu cover them all.
@@ -237,11 +240,21 @@ namespace ZenStatesDebugTool
                 try
                 {
                     // Reads only (cpu/WMI), no control access — safe off the UI thread.
-                    Dictionary<int, int> coMargins = GatherCoMargins();
-                    uint fmax = cpu.GetFMax();
-                    uint[] csValues = cpu.GetAllCurveShaperMargins();
-                    double? bclk = cpu.GetBclk();
-                    bool? prochot = cpu.IsProchotEnabled();
+                    // The SMU/CPU reads are serialized against other threads via
+                    // Hardware.Sync; the UI apply happens later (UiInvoke) outside the lock.
+                    Dictionary<int, int> coMargins;
+                    uint fmax;
+                    uint[] csValues;
+                    double? bclk;
+                    bool? prochot;
+                    lock (Hardware.Sync)
+                    {
+                        coMargins = GatherCoMargins();
+                        fmax = cpu.GetFMax();
+                        csValues = cpu.GetAllCurveShaperMargins();
+                        bclk = cpu.GetBclk();
+                        prochot = cpu.IsProchotEnabled();
+                    }
                     List<object> wmiItems = GatherWmiCommands();
 
                     // Apply everything to the controls in a single UI-thread marshal.
@@ -355,7 +368,7 @@ namespace ZenStatesDebugTool
                     }
                     catch (Exception e)
                     {
-                        Console.WriteLine($"Error initializing core {i}: {e}");
+                        Debug.WriteLine($"Error initializing core {i}: {e}");
                     }
                 }
             }
@@ -368,38 +381,40 @@ namespace ZenStatesDebugTool
             return (sbyte)(unchecked(value));
         }
 
+        // The 5 Curve Shaper tiers (min, low, med, high, max), each [0]=low [1]=med [2]=high
+        // designer control. Built once so the read/apply/save/load paths can loop over the
+        // grid instead of repeating 15 hand-written lines (which were easy to get out of sync).
+        private NumericUpDown[][] _csGrid;
+        private NumericUpDown[][] CsGrid => _csGrid ?? (_csGrid = new[]
+        {
+            new[] { cs_min_low,  cs_min_med,  cs_min_high  },
+            new[] { cs_low_low,  cs_low_med,  cs_low_high  },
+            new[] { cs_med_low,  cs_med_med,  cs_med_high  },
+            new[] { cs_high_low, cs_high_med, cs_high_high },
+            new[] { cs_max_low,  cs_max_med,  cs_max_high  },
+        });
+        private static readonly string[] CsTierNames = { "min", "low", "medium", "high", "max" };
+
         // Synchronous read+apply, used by the Refresh button (UI thread).
         private void InitCS(bool showStatus = false)
         {
-            ApplyCurveShaperValues(cpu.GetAllCurveShaperMargins(), showStatus);
+            ApplyCurveShaperValues(Hardware.Locked(() => cpu.GetAllCurveShaperMargins()), showStatus);
         }
 
         // Apply-only half (UI thread); the read is done by the caller so the startup path
-        // can gather it on a background thread.
+        // can gather it on a background thread. Each tier word packs low/med/high in bits
+        // 8/16/24.
         private void ApplyCurveShaperValues(uint[] csValues, bool showStatus = false)
         {
             if (csValues == null || csValues.Length < 5)
                 return;
 
-            cs_min_low.Value = ConvertMarginToInt(csValues[0] >> 8 & 0xFF);
-            cs_min_med.Value = ConvertMarginToInt(csValues[0] >> 16 & 0xFF);
-            cs_min_high.Value = ConvertMarginToInt(csValues[0] >> 24 & 0xFF);
-
-            cs_low_low.Value = ConvertMarginToInt(csValues[1] >> 8 & 0xFF);
-            cs_low_med.Value = ConvertMarginToInt(csValues[1] >> 16 & 0xFF);
-            cs_low_high.Value = ConvertMarginToInt(csValues[1] >> 24 & 0xFF);
-
-            cs_med_low.Value = ConvertMarginToInt(csValues[2] >> 8 & 0xFF);
-            cs_med_med.Value = ConvertMarginToInt(csValues[2] >> 16 & 0xFF);
-            cs_med_high.Value = ConvertMarginToInt(csValues[2] >> 24 & 0xFF);
-
-            cs_high_low.Value = ConvertMarginToInt(csValues[3] >> 8 & 0xFF);
-            cs_high_med.Value = ConvertMarginToInt(csValues[3] >> 16 & 0xFF);
-            cs_high_high.Value = ConvertMarginToInt(csValues[3] >> 24 & 0xFF);
-
-            cs_max_low.Value = ConvertMarginToInt(csValues[4] >> 8 & 0xFF);
-            cs_max_med.Value = ConvertMarginToInt(csValues[4] >> 16 & 0xFF);
-            cs_max_high.Value = ConvertMarginToInt(csValues[4] >> 24 & 0xFF);
+            for (int tier = 0; tier < 5; tier++)
+            {
+                CsGrid[tier][0].Value = ConvertMarginToInt(csValues[tier] >> 8 & 0xFF);
+                CsGrid[tier][1].Value = ConvertMarginToInt(csValues[tier] >> 16 & 0xFF);
+                CsGrid[tier][2].Value = ConvertMarginToInt(csValues[tier] >> 24 & 0xFF);
+            }
 
             if (showStatus)
                 SetStatusText("Curve Shaper margins refreshed.");
@@ -410,7 +425,7 @@ namespace ZenStatesDebugTool
         {
             RefreshCoMarginsFromHardware();
             InitStartupProfileUi();
-            numericUpDownFmax.Value = cpu.GetFMax();
+            numericUpDownFmax.Value = Hardware.Locked(() => cpu.GetFMax());
         }
 
         // Per-core CO margin read + apply, on the UI thread (button path).
@@ -428,7 +443,7 @@ namespace ZenStatesDebugTool
                 if (control == null)
                     continue;
                 control.Enabled = true;
-                uint? margin = cpu.GetPsmMarginSingleCore(EncodeCoreMarginBitmask((int)i));
+                uint? margin = Hardware.Locked(() => cpu.GetPsmMarginSingleCore(EncodeCoreMarginBitmask((int)i)));
                 if (margin != null)
                     control.Value = Convert.ToDecimal((int)margin);
             }
@@ -487,14 +502,14 @@ namespace ZenStatesDebugTool
             _suppressStartupTaskUpdates = true;
             try
             {
-                checkBoxApplyCOStartup.Checked = TaskExists("RyzenSDT");
+                checkBoxApplyCOStartup.Checked = StartupTaskService.Exists();
 
                 if (comboBoxStartupProfile == null) return;
 
                 comboBoxStartupProfile.Items.Clear();
                 foreach (var n in profileManager.List())
                     comboBoxStartupProfile.Items.Add(n);
-                string startupName = GetStartupProfileFromTask("RyzenSDT");
+                string startupName = StartupTaskService.GetProfileName();
                 if (startupName != null && comboBoxStartupProfile.Items.Contains(startupName))
                     comboBoxStartupProfile.SelectedItem = startupName;
                 else if (comboBoxStartupProfile.Items.Count > 0)
@@ -742,7 +757,9 @@ namespace ZenStatesDebugTool
             {
                 var profile = profileManager.Load(name);
                 if (profile == null) { HandleError($"Profile '{name}' not found."); return; }
-                var result = profileApplier.Apply(profile, cpu);
+                // One lock covers every hardware write the applier performs (it does no UI
+                // Invoke), serializing it against monitors and other readers.
+                var result = Hardware.Locked(() => profileApplier.Apply(profile, cpu));
                 SetStatusText(result.Success
                     ? $"Profile '{name}' applied."
                     : "Apply finished with errors: " + string.Join("; ", result.Messages));
@@ -961,16 +978,20 @@ namespace ZenStatesDebugTool
 
         private bool IsCoreEnabled(int coreIndex)
         {
-            int mapIndex = coreIndex / 8;
-            int coreInGroup = coreIndex % 8;
-            return mapIndex >= 0
-                && mapIndex < cpu.info.topology.coreDisableMap.Length
-                && ((~cpu.info.topology.coreDisableMap[mapIndex] >> coreInGroup) & 1) == 1;
+            return CoreTopology.IsCoreEnabled(cpu.info.topology.coreDisableMap, coreIndex);
+        }
+
+        // True for APU SMU types, which address CO margins by a flat core index.
+        private bool IsApu()
+        {
+            return cpu.smu.SMU_TYPE >= SMU.SmuType.TYPE_APU0 && cpu.smu.SMU_TYPE <= SMU.SmuType.TYPE_APU2;
         }
 
         private void EnableOCMode(bool prochotEnabled = true)
         {
-            if (cpu.smu.SendSmuCommand(cpu.smu.Rsmu, cpu.smu.Rsmu.SMU_MSG_EnableOcMode, prochotEnabled ? 0U : 0x1000000))
+            bool ok = Hardware.Locked(() =>
+                cpu.smu.SendSmuCommand(cpu.smu.Rsmu, cpu.smu.Rsmu.SMU_MSG_EnableOcMode, prochotEnabled ? 0U : 0x1000000));
+            if (ok)
                 SetStatusText(prochotEnabled ? "PROCHOT enabled." : "PROCHOT disabled.");
             else
                 HandleError("Error setting OC Mode!");
@@ -978,7 +999,7 @@ namespace ZenStatesDebugTool
 
         private void DisableOCMode()
         {
-            if (cpu.DisableOcMode() == SMU.Status.OK)
+            if (Hardware.Locked(() => cpu.DisableOcMode()) == SMU.Status.OK)
                 SetStatusText(string.Format("Set OK!"));
             else
                 HandleError("Error disabling OC Mode!");
@@ -1135,14 +1156,14 @@ namespace ZenStatesDebugTool
             int ccd = coreIndex / 8;
             int ccx = coreIndex / coresInCcx;
             uint mask = (uint)(((ccd << 4 | ccx % 2 & 15) << 4 | coreIndex % 4 & 15) << 20);
-            return cpu.SetFrequencySingleCore(mask, (uint)mhz);
+            return Hardware.Locked(() => cpu.SetFrequencySingleCore(mask, (uint)mhz));
         }
 
         private void SetStatusText(string status)
         {
             labelStatus.Text = status;
 #if DEBUG
-            Console.WriteLine($"CMD Status: {status}");
+            Debug.WriteLine($"CMD Status: {status}");
 #endif
         }
 
@@ -1194,7 +1215,7 @@ namespace ZenStatesDebugTool
         {
             try
             {
-                address = Convert.ToUInt32(text.Trim().ToLower(), 16);
+                address = Convert.ToUInt32(text.Trim().ToLowerInvariant(), 16);
             }
             catch
             {
@@ -1236,7 +1257,7 @@ namespace ZenStatesDebugTool
             responseString += Environment.NewLine;
             responseString += Environment.NewLine;
 
-            Console.WriteLine($"Response: {responseString}");
+            Debug.WriteLine($"Response: {responseString}");
             PrependResult(responseString);
         }
 
@@ -1252,7 +1273,7 @@ namespace ZenStatesDebugTool
                 $"BIN: {Convert.ToString(data, 2).PadLeft(32, '0')}" +
                 Environment.NewLine +
                 Environment.NewLine;
-            Console.WriteLine($"Response: {responseString}");
+            Debug.WriteLine($"Response: {responseString}");
             PrependResult(responseString);
         }
 
@@ -1263,7 +1284,9 @@ namespace ZenStatesDebugTool
                 var resultForm = new ResultForm();
                 resultForm.textBoxFormResult.Text = result;
                 resultForm.Text = title;
-                resultForm.Show();
+                // Owned by the main form: it stays above the owner and is closed
+                // automatically when the app exits, so scans can't leave orphan windows.
+                resultForm.Show(this);
             }));
         }
 
@@ -1294,12 +1317,14 @@ namespace ZenStatesDebugTool
                 }
                 
 
-                Console.WriteLine("MSG Address:  0x" + Convert.ToString(testMailbox.SMU_ADDR_MSG, 16).ToUpper());
-                Console.WriteLine("RSP Address:  0x" + Convert.ToString(testMailbox.SMU_ADDR_RSP, 16).ToUpper());
-                Console.WriteLine("ARG0 Address: 0x" + Convert.ToString(testMailbox.SMU_ADDR_ARG, 16).ToUpper());
-                Console.WriteLine("ARG0        : 0x" + Convert.ToString(args[0], 16).ToUpper());
+                Debug.WriteLine("MSG Address:  0x" + Convert.ToString(testMailbox.SMU_ADDR_MSG, 16).ToUpper());
+                Debug.WriteLine("RSP Address:  0x" + Convert.ToString(testMailbox.SMU_ADDR_RSP, 16).ToUpper());
+                Debug.WriteLine("ARG0 Address: 0x" + Convert.ToString(testMailbox.SMU_ADDR_ARG, 16).ToUpper());
+                Debug.WriteLine("ARG0        : 0x" + Convert.ToString(args[0], 16).ToUpper());
 
-                SMU.Status status = cpu.smu.SendSmuCommand(testMailbox, command, ref args);
+                uint[] argsLocal = args;
+                SMU.Status status = Hardware.Locked(() => cpu.smu.SendSmuCommand(testMailbox, command, ref argsLocal));
+                args = argsLocal;
 
                 if (status == SMU.Status.OK)
                 {
@@ -1342,7 +1367,7 @@ namespace ZenStatesDebugTool
                 SetButtonsState(false);
 
                 TryConvertToUint(textBoxPciAddress.Text, out uint address);
-                uint data = cpu.ReadDword(address);
+                uint data = Hardware.Locked(() => cpu.ReadDword(address));
 
                 textBoxPciValue.Text = $"0x{data:X8}";
 
@@ -1367,9 +1392,9 @@ namespace ZenStatesDebugTool
                 TryConvertToUint(textBoxPciAddress.Text, out uint address);
                 TryConvertToUint(textBoxPciValue.Text, out uint data);
 
-                bool res = false;
-                if (cpu.WriteDwordEx(cpu.smu.SMU_OFFSET_ADDR, address))
-                    res = cpu.WriteDwordEx(cpu.smu.SMU_OFFSET_DATA, data);
+                bool res = Hardware.Locked(() =>
+                    cpu.WriteDwordEx(cpu.smu.SMU_OFFSET_ADDR, address) &&
+                    cpu.WriteDwordEx(cpu.smu.SMU_OFFSET_DATA, data));
 
                 if (res)
                     SetStatusText("Write OK.");
@@ -1416,7 +1441,7 @@ namespace ZenStatesDebugTool
             testMailbox.SMU_ADDR_RSP = rspAddr;
             testMailbox.SMU_ADDR_ARG = argAddr;
 
-            return cpu.smu.SendSmuCommand(testMailbox, cmd, ref args);
+            return Hardware.Locked(() => cpu.smu.SendSmuCommand(testMailbox, cmd, ref args));
         }
 
         private void ScanSmuRange(uint start, uint end, uint step, uint offset)
@@ -1429,23 +1454,27 @@ namespace ZenStatesDebugTool
             {
                 uint smuRspAddress = start + offset;
  
-                if (cpu.ReadDword(start) != 0xFFFFFFFF)
+                // Each cpu access is locked individually (not the whole loop) because the
+                // match-found branch below marshals to the UI thread with a synchronous
+                // Invoke; holding Hardware.Sync across that would risk a cross-thread deadlock.
+                if (Hardware.Locked(() => cpu.ReadDword(start)) != 0xFFFFFFFF)
                 {
                     // Send unknown command 0xFF to each pair of this start and possible response addresses
-                    if (cpu.WriteDwordEx(start, 0xFF))
+                    if (Hardware.Locked(() => cpu.WriteDwordEx(start, 0xFF)))
                     {
                         Thread.Sleep(10);
 
                         while (smuRspAddress <= end)
                         {
+                            uint rspAddr = smuRspAddress;
                             // Expect UNKNOWN_CMD status to be returned if the mailbox works
-                            if (cpu.ReadDword(smuRspAddress) == 0xFE)
+                            if (Hardware.Locked(() => cpu.ReadDword(rspAddr)) == 0xFE)
                             {
                                 // Send Get_SMU_Version command
-                                if (cpu.WriteDwordEx(start, 0x2))
+                                if (Hardware.Locked(() => cpu.WriteDwordEx(start, 0x2)))
                                 {
                                     Thread.Sleep(10);
-                                    if (cpu.ReadDword(smuRspAddress) == 0x1)
+                                    if (Hardware.Locked(() => cpu.ReadDword(rspAddr)) == 0x1)
                                         temp.Add(new KeyValuePair<uint, uint>(start, smuRspAddress));
                                 }
                             }
@@ -1461,24 +1490,25 @@ namespace ZenStatesDebugTool
             {
                 for (var i = 0; i < temp.Count; i++)
                 {
-                    Console.WriteLine($"{temp[i].Key:X8}: {temp[i].Value:X8}");
+                    Debug.WriteLine($"{temp[i].Key:X8}: {temp[i].Value:X8}");
                 }
 
-                Console.WriteLine();
+                Debug.WriteLine("");
             }
 
             List<uint> possibleArgAddresses = new List<uint>();
 
             foreach (var pair in temp)
             {
-                Console.WriteLine($"Testing {pair.Key:X8}: {pair.Value:X8}");
+                Debug.WriteLine($"Testing {pair.Key:X8}: {pair.Value:X8}");
 
                 if (TrySettings(pair.Key, pair.Value, 0xFFFFFFFF, 0x2, 0xFF) == SMU.Status.OK)
                 {
                     var smuArgAddress = pair.Value + 4;
                     while (smuArgAddress <= end)
                     {
-                        if (cpu.ReadDword(smuArgAddress) == cpu.smu.Version)
+                        uint argAddr = smuArgAddress;
+                        if (Hardware.Locked(() => cpu.ReadDword(argAddr)) == cpu.smu.Version)
                         {
                             possibleArgAddresses.Add(smuArgAddress);
                         }
@@ -1499,7 +1529,7 @@ namespace ZenStatesDebugTool
 
                         // Send test command
                         if (TrySettings(pair.Key, pair.Value, address, 0x1, testArg) == SMU.Status.OK)
-                            if (cpu.ReadDword(address) != testArg + 1)
+                            if (Hardware.Locked(() => cpu.ReadDword(address)) != testArg + 1)
                                 retries = -1;
                     }
 
@@ -1527,72 +1557,6 @@ namespace ZenStatesDebugTool
             }
         }
 
-        /*private void ScanSmuRange_old(uint start, uint end, int step, byte offset)
-        {
-            matches = new List<SmuAddressSet>();
-
-            while (start <= end)
-            {
-                uint smuRspAddress = start + offset;
-                uint smuArgAddress = 0xFFFFFFFF;
-
-                if (cpu.ReadDword(start) != 0xFFFFFFFF)
-                {
-                    // Check if CMD-RSP pair returns correct status, while using a placeholder ARG address
-                    if (TrySettings(start, smuRspAddress, smuArgAddress, testMailbox.SMU_MSG_TestMessage, 0x0) == SMU.Status.OK)
-                    {
-                        // Send smu version command, so the corresponding ARG0 address changes its value
-                        TrySettings(start, smuRspAddress, smuArgAddress, testMailbox.SMU_MSG_GetSmuVersion, 0x0);
-                        bool match = false;
-
-                        smuArgAddress = smuRspAddress + 4;
-
-                        // Scan for ARG address
-                        while ((smuArgAddress <= end) && !match)
-                        {
-                            // Check if smu version major is in range
-                            var currentRegValue = (cpu.ReadDword(smuArgAddress) & 0x00FF0000) >> 16;
-                            Console.WriteLine($"REG: 0x{smuArgAddress:X8} Value: 0x{currentRegValue:X8}");
-                            if (currentRegValue > 1 && currentRegValue <= 99)
-                            {
-                                // Send test message with an argument, using the potential ARG0 address
-                                var argValue = (uint)matches.Count * 2 + 99;
-                                TrySettings(start, smuRspAddress, smuArgAddress, testMailbox.SMU_MSG_TestMessage, argValue);
-                                currentRegValue = cpu.ReadDword(smuArgAddress);
-                                Console.WriteLine($"REG: 0x{smuArgAddress:X8} Value: 0x{currentRegValue:X8}");
-
-                                // Check the address for expected value (argument + 1)
-                                if (currentRegValue == argValue + 1)
-                                {
-                                    match = true;
-                                    matches.Add(new SmuAddressSet(start, smuRspAddress, smuArgAddress));
-
-                                    string responseString =
-                                        $"CMD:  0x{start:X8}" +
-                                        Environment.NewLine +
-                                        $"RSP:  0x{smuRspAddress:X8}" +
-                                        Environment.NewLine +
-                                        $"ARG:  0x{smuArgAddress:X8}" +
-                                        Environment.NewLine +
-                                        Environment.NewLine;
-
-                                    smuArgAddress += 20;
-
-                                    Invoke(new MethodInvoker(delegate
-                                    {
-                                        textBoxResult.Text += responseString;
-                                    }));
-                                }
-                            }
-
-                            smuArgAddress += 0x4;
-                        }
-                    }
-                }
-
-                start += (uint)step;
-            }
-        }*/
 
         private void RunBackgroundTask(DoWorkEventHandler task, RunWorkerCompletedEventHandler completedHandler)
         {
@@ -1601,6 +1565,9 @@ namespace ZenStatesDebugTool
                 SetButtonsState(false);
                 textBoxResult.Clear();
 
+                // Dispose the previous worker before replacing it, so repeated scans don't
+                // leak a BackgroundWorker (and its event subscriptions) each time.
+                backgroundWorker1?.Dispose();
                 backgroundWorker1 = new BackgroundWorker();
                 backgroundWorker1.DoWork += task;
                 backgroundWorker1.RunWorkerCompleted += completedHandler;
@@ -1751,7 +1718,9 @@ namespace ZenStatesDebugTool
         private void BackgroundWorkerReport_RunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
         {
             string unixTimestamp = Convert.ToString((DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1))).TotalMinutes);
-            string fileName = $@"SMUDebug_{unixTimestamp}.json";
+            // Write next to the exe, not the (unpredictable) current working directory, so
+            // the report always lands in a known place.
+            string fileName = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, $"SMUDebug_{unixTimestamp}.json");
 
             if (File.Exists(fileName))
                 File.Delete(fileName);
@@ -1814,8 +1783,11 @@ namespace ZenStatesDebugTool
 
         private void PstateFidDid_KeyUp(object sender, KeyEventArgs e)
         {
-            var fid = string.IsNullOrEmpty(pstateFid.Text) ? 0 : int.Parse(pstateFid.Text);
-            var did = string.IsNullOrEmpty(pstateDid.Text) ? 1 : int.Parse(pstateDid.Text);
+            // TryParse, not Parse: this runs on every keystroke, and a partial/overlong entry
+            // would otherwise throw straight to the global exception handler.
+            int fid = int.TryParse(pstateFid.Text, out int f) ? f : 0;
+            int did = int.TryParse(pstateDid.Text, out int d) ? d : 1;
+            if (did == 0) did = 1; // avoid divide-by-zero
             pstateFrequency.Text = (fid * 25 / (did * 12.5)) * 100 + "MHz";
         }
 
@@ -1823,7 +1795,10 @@ namespace ZenStatesDebugTool
         {
             uint eax = default, edx = default;
             var pstateId = pstateIdBox.SelectedIndex;
-            if (!cpu.ReadMsr(Convert.ToUInt32(Convert.ToInt64(0xC0010064) + pstateId), ref eax, ref edx))
+            uint pstateEax = 0, pstateEdx = 0;
+            bool readOk = Hardware.Locked(() => cpu.ReadMsr(Convert.ToUInt32(Convert.ToInt64(0xC0010064) + pstateId), ref pstateEax, ref pstateEdx));
+            eax = pstateEax; edx = pstateEdx;
+            if (!readOk)
             {
                 SetStatusText($@"Error reading PState {pstateId}!");
                 return;
@@ -1876,7 +1851,10 @@ namespace ZenStatesDebugTool
             uint CpuDfsId = 0x0;
             uint CpuFid = 0x0;
 
-            if (!cpu.ReadMsr(Convert.ToUInt32(Convert.ToInt64(0xC0010064) + pstateId), ref eax, ref edx))
+            uint readEax = 0, readEdx = 0;
+            bool pstateReadOk = Hardware.Locked(() => cpu.ReadMsr(Convert.ToUInt32(Convert.ToInt64(0xC0010064) + pstateId), ref readEax, ref readEdx));
+            eax = readEax; edx = readEdx;
+            if (!pstateReadOk)
             {
                 SetStatusText($@"Error reading PState {pstateId}!");
                 return;
@@ -1907,14 +1885,17 @@ namespace ZenStatesDebugTool
         {
             uint eax = 0, edx = 0;
 
-            if (cpu.ReadMsr(0xC0010015, ref eax, ref edx))
+            return Hardware.Locked(() =>
             {
-                eax |= 0x200000;
-                return cpu.WriteMsr(0xC0010015, eax, edx);
-            }
+                if (cpu.ReadMsr(0xC0010015, ref eax, ref edx))
+                {
+                    eax |= 0x200000;
+                    return cpu.WriteMsr(0xC0010015, eax, edx);
+                }
 
-            SetStatusText($@"Error applying TSC fix!");
-            return false;
+                SetStatusText($@"Error applying TSC fix!");
+                return false;
+            });
         }
 
         private bool WritePstateClick(int pstateId, uint eax, uint edx, int numanode = 0)
@@ -1923,7 +1904,7 @@ namespace ZenStatesDebugTool
 
             if (!ApplyTscWorkaround()) return false;
 
-            if (!cpu.WriteMsr(Convert.ToUInt32(Convert.ToInt64(0xC0010064) + pstateId), eax, edx))
+            if (!Hardware.Locked(() => cpu.WriteMsr(Convert.ToUInt32(Convert.ToInt64(0xC0010064) + pstateId), eax, edx)))
             {
                 SetStatusText($@"Error writing PState {pstateId}!");
                 return false;
@@ -1952,11 +1933,16 @@ namespace ZenStatesDebugTool
 
                 var result = new StringBuilder("REG         Value(HEX) Value(BIN)" + Environment.NewLine);
 
-                while (startReg <= endReg)
+                // Lock the whole read loop (no UI Invoke happens inside it); the status and
+                // result-form marshals are outside this region.
+                lock (Hardware.Sync)
                 {
-                    var data = cpu.ReadDword(startReg);
-                    result.AppendLine($"0x{startReg:X8}: 0x{data:X8} {Convert.ToString(data, 2).PadLeft(32, '0')}");
-                    startReg += 4;
+                    while (startReg <= endReg)
+                    {
+                        var data = cpu.ReadDword(startReg);
+                        result.AppendLine($"0x{startReg:X8}: 0x{data:X8} {Convert.ToString(data, 2).PadLeft(32, '0')}");
+                        startReg += 4;
+                    }
                 }
 
                 ShowResultForm("PCI Scan result", result.ToString());
@@ -2008,7 +1994,7 @@ namespace ZenStatesDebugTool
                 DisableOCMode();
             }
             EnableOCMode(checkBoxPROCHOT.Checked);
-            if (!checkBoxPROCHOT.Checked && cpu.IsProchotEnabled() == true)
+            if (!checkBoxPROCHOT.Checked && Hardware.Locked(() => cpu.IsProchotEnabled()) == true)
             {
                 checkBoxPROCHOT.Checked = true;
                 HandleError($@"Error, PROCHOT could not be disabled!");
@@ -2034,15 +2020,18 @@ namespace ZenStatesDebugTool
                 TryConvertToUint(textBoxMsrStart.Text, out uint startReg);
                 TryConvertToUint(textBoxMsrEnd.Text, out uint endReg);
 
-                while (startReg <= endReg)
+                lock (Hardware.Sync)
                 {
-                    uint eax = default, edx = default;
-                    if (cpu.ReadMsr(startReg, ref eax, ref edx))
+                    while (startReg <= endReg)
                     {
-                        result.AppendLine($"0x{startReg:X8}: 0x{edx:X8} 0x{eax:X8}");
-                    }
+                        uint eax = default, edx = default;
+                        if (cpu.ReadMsr(startReg, ref eax, ref edx))
+                        {
+                            result.AppendLine($"0x{startReg:X8}: 0x{edx:X8} 0x{eax:X8}");
+                        }
 
-                    startReg += 1;
+                        startReg += 1;
+                    }
                 }
 
                 ShowResultForm("MSR Scan result", result.ToString());
@@ -2061,7 +2050,10 @@ namespace ZenStatesDebugTool
         {
             TryConvertToUint(textBoxMsrAddress.Text, out uint msr);
             uint eax = default, edx = default;
-            if (cpu.ReadMsr(msr, ref eax, ref edx))
+            uint rEax = 0, rEdx = 0;
+            bool ok = Hardware.Locked(() => cpu.ReadMsr(msr, ref rEax, ref rEdx));
+            eax = rEax; edx = rEdx;
+            if (ok)
             {
                 textBoxMsrEdx.Text = $"0x{edx:X8}";
                 textBoxMsrEax.Text = $"0x{eax:X8}";
@@ -2074,7 +2066,7 @@ namespace ZenStatesDebugTool
             TryConvertToUint(textBoxMsrEax.Text, out uint eax);
             TryConvertToUint(textBoxMsrAddress.Text, out uint msr);
 
-            if (!cpu.WriteMsr(msr, eax, edx))
+            if (!Hardware.Locked(() => cpu.WriteMsr(msr, eax, edx)))
             {
                 HandleError($@"Error writing MSR {textBoxMsrAddress.Text}!");
                 return;
@@ -2101,24 +2093,27 @@ namespace ZenStatesDebugTool
                 uint LFuncStd = 0, LFuncExt = 0;
                 uint eax = 0, ebx = 0, ecx = 0, edx = 0;
 
-                if (cpu.Cpuid(0x00000000, ref eax, ref ebx, ref ecx, ref edx))
-                    LFuncStd = eax;
-
-                if (cpu.Cpuid(0x80000000, ref eax, ref ebx, ref ecx, ref edx))
-                    LFuncExt = eax - 0x80000000;
-
-                for (uint i = 0; i <= LFuncStd; ++i)
+                lock (Hardware.Sync)
                 {
-                    var index = 0x00000000 + i;
-                    cpu.Cpuid(index, ref eax, ref ebx, ref ecx, ref edx);
-                    result.AppendLine($"0x{index:X8}: 0x{eax:X8} 0x{ebx:X8} 0x{ecx:X8} 0x{edx:X8}");
-                }
+                    if (cpu.Cpuid(0x00000000, ref eax, ref ebx, ref ecx, ref edx))
+                        LFuncStd = eax;
 
-                for (uint i = 0; i <= LFuncExt; ++i)
-                {
-                    var index = 0x80000000 + i;
-                    cpu.Cpuid(index, ref eax, ref ebx, ref ecx, ref edx);
-                    result.AppendLine($"0x{index:X8}: 0x{eax:X8} 0x{ebx:X8} 0x{ecx:X8} 0x{edx:X8}");
+                    if (cpu.Cpuid(0x80000000, ref eax, ref ebx, ref ecx, ref edx))
+                        LFuncExt = eax - 0x80000000;
+
+                    for (uint i = 0; i <= LFuncStd; ++i)
+                    {
+                        var index = 0x00000000 + i;
+                        cpu.Cpuid(index, ref eax, ref ebx, ref ecx, ref edx);
+                        result.AppendLine($"0x{index:X8}: 0x{eax:X8} 0x{ebx:X8} 0x{ecx:X8} 0x{edx:X8}");
+                    }
+
+                    for (uint i = 0; i <= LFuncExt; ++i)
+                    {
+                        var index = 0x80000000 + i;
+                        cpu.Cpuid(index, ref eax, ref ebx, ref ecx, ref edx);
+                        result.AppendLine($"0x{index:X8}: 0x{eax:X8} 0x{ebx:X8} 0x{ecx:X8} 0x{edx:X8}");
+                    }
                 }
 
                 ShowResultForm("CPUID Scan result", result.ToString());
@@ -2137,7 +2132,10 @@ namespace ZenStatesDebugTool
         {
             TryConvertToUint(textBoxCPUIDAddress.Text, out uint index);
             uint eax = 0, ebx = 0, ecx = 0, edx = 0;
-            if (cpu.Cpuid(index, ref eax, ref ebx, ref ecx, ref edx))
+            uint cEax = 0, cEbx = 0, cEcx = 0, cEdx = 0;
+            bool ok = Hardware.Locked(() => cpu.Cpuid(index, ref cEax, ref cEbx, ref cEcx, ref cEdx));
+            eax = cEax; ebx = cEbx; ecx = cEcx; edx = cEdx;
+            if (ok)
             {
                 textBoxCPUIDeax.Text = $"0x{eax:X8}";
                 textBoxCPUIDebx.Text = $"0x{ebx:X8}";
@@ -2186,18 +2184,7 @@ namespace ZenStatesDebugTool
 
         private uint EncodeCoreMarginBitmask(int coreIndex, int coresPerCCD = 8)
         {
-            if (cpu.smu.SMU_TYPE >= SMU.SmuType.TYPE_APU0 && cpu.smu.SMU_TYPE <= SMU.SmuType.TYPE_APU2)
-            {
-                return (uint)coreIndex;
-            }
-
-            int ccdIndex = Convert.ToInt32(coreIndex / coresPerCCD);
-            int localCoreIndex = coreIndex % coresPerCCD;
-
-            int ccdMask = ccdIndex << 8;
-            int mask = ccdMask | localCoreIndex;
-
-            return (uint)(mask << 20);
+            return CoreTopology.EncodeCoreMarginBitmask(IsApu(), coreIndex, coresPerCCD);
         }
 
         private void ApplyCO()
@@ -2205,14 +2192,17 @@ namespace ZenStatesDebugTool
             //if (cpu.info.family == Cpu.Family.FAMILY_19H)
             //if (cpu.smu.Rsmu.SMU_MSG_SetDldoPsmMargin != 0)
             {
-                for (var i = 0; i < GetPhysicalCoreCount(); i++)
+                lock (Hardware.Sync)
                 {
-                    if (IsCoreEnabled(i))
+                    for (var i = 0; i < GetPhysicalCoreCount(); i++)
                     {
-                        NumericUpDown control = GetCOControl(i);
-                        if (control != null)
+                        if (IsCoreEnabled(i))
                         {
-                            cpu.SetPsmMarginSingleCore(EncodeCoreMarginBitmask(i), Convert.ToInt32(control.Value));
+                            NumericUpDown control = GetCOControl(i);
+                            if (control != null)
+                            {
+                                cpu.SetPsmMarginSingleCore(EncodeCoreMarginBitmask(i), Convert.ToInt32(control.Value));
+                            }
                         }
                     }
                 }
@@ -2330,17 +2320,17 @@ namespace ZenStatesDebugTool
                 if (dvaluesPack != null)
                 {
                     uint[] DValuesBuffer = (uint[])dvaluesPack.GetPropertyValue("DValuesBuffer");
-                    Console.WriteLine(command.text);
+                    Debug.WriteLine(command.text);
                     foreach (uint value in DValuesBuffer)
                     {
                         if (value != 0)
                         {
                             WmiCmdListItem item = new WmiCmdListItem(value.ToString(), value);
-                            Console.WriteLine(value);
+                            Debug.WriteLine(value);
                             comboBoxAvailableValues.Items.Add(item);
                         }
                     }
-                    Console.WriteLine("------------------------");
+                    Debug.WriteLine("------------------------");
 
                     if (comboBoxAvailableValues.Items.Count > 0)
                         comboBoxAvailableValues.Enabled = true;
@@ -2369,21 +2359,19 @@ namespace ZenStatesDebugTool
         private void ButtonWmiCmdSend_Click(object sender, EventArgs e)
         {
             WmiCmdListItem command = comboBoxAvailableCommands.SelectedItem as WmiCmdListItem;
+            if (command == null) return;
+
             uint value = 0;
             if (command.isSet)
             {
-                string text = textBoxWmiArgument.Text;
-                //if (text.StartsWith("0x"))
+                if (!uint.TryParse(textBoxWmiArgument.Text.Trim(), out value))
                 {
-                    //TryConvertToUint(text, out value);
-                }
-                //else
-                {
-                    value = uint.Parse(text);
+                    HandleError("Enter a valid numeric argument (0 - 65535).");
+                    return;
                 }
             }
 
-            if (value >= 0 && value < 0x10000)
+            if (value < 0x10000)
             {
                 var response = WMI.RunCommand(classInstance, command.value, value);
                 var text = command.text + Environment.NewLine + "------------------------" + Environment.NewLine;
@@ -2398,10 +2386,17 @@ namespace ZenStatesDebugTool
 
         private void ButtonBCLKApply_Click(object sender, EventArgs e)
         {
-            double targetBclk = double.Parse(numericUpDownBclk.Text);
-            cpu.SetBclk(targetBclk);
-
-            double? currentBclk = cpu.GetBclk();
+            if (!double.TryParse(numericUpDownBclk.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double targetBclk)
+                && !double.TryParse(numericUpDownBclk.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out targetBclk))
+            {
+                HandleError("Invalid BCLK value.");
+                return;
+            }
+            double? currentBclk = Hardware.Locked(() =>
+            {
+                cpu.SetBclk(targetBclk);
+                return cpu.GetBclk();
+            });
             labelBCLK.Text = currentBclk + " MHz";
             numericUpDownBclk.Text = $"{currentBclk}";
         }
@@ -2421,26 +2416,6 @@ namespace ZenStatesDebugTool
                     control.Value = newValue;
                 }
             }
-        }
-
-        private void Button_ccd0_inc_Click(object sender, EventArgs e)
-        {
-            BulkMarginChangeHandler(0, 1);
-        }
-
-        private void Button_ccd1_inc_Click(object sender, EventArgs e)
-        {
-            BulkMarginChangeHandler(1, 1);
-        }
-
-        private void Button_ccd0_dec_Click(object sender, EventArgs e)
-        {
-            BulkMarginChangeHandler(0, -1);
-        }
-
-        private void Button_ccd1_dec_Click(object sender, EventArgs e)
-        {
-            BulkMarginChangeHandler(1, -1);
         }
 
         private void ButtonCpuidDecode_Click(object sender, EventArgs e)
@@ -2530,14 +2505,14 @@ namespace ZenStatesDebugTool
                 }
             }
 
-            profile.CurveShaperTiers = new List<CurveShaperTier>
-            {
-                new CurveShaperTier { Low = (int)cs_min_low.Value,  Medium = (int)cs_min_med.Value,  High = (int)cs_min_high.Value },
-                new CurveShaperTier { Low = (int)cs_low_low.Value,  Medium = (int)cs_low_med.Value,  High = (int)cs_low_high.Value },
-                new CurveShaperTier { Low = (int)cs_med_low.Value,  Medium = (int)cs_med_med.Value,  High = (int)cs_med_high.Value },
-                new CurveShaperTier { Low = (int)cs_high_low.Value, Medium = (int)cs_high_med.Value, High = (int)cs_high_high.Value },
-                new CurveShaperTier { Low = (int)cs_max_low.Value,  Medium = (int)cs_max_med.Value,  High = (int)cs_max_high.Value },
-            };
+            profile.CurveShaperTiers = new List<CurveShaperTier>();
+            for (int tier = 0; tier < 5; tier++)
+                profile.CurveShaperTiers.Add(new CurveShaperTier
+                {
+                    Low = (int)CsGrid[tier][0].Value,
+                    Medium = (int)CsGrid[tier][1].Value,
+                    High = (int)CsGrid[tier][2].Value
+                });
 
             profile.Fmax = numericUpDownFmax.Value;
 
@@ -2565,11 +2540,8 @@ namespace ZenStatesDebugTool
 
             if (profile.CurveShaperTiers != null && profile.CurveShaperTiers.Count >= 5)
             {
-                SetCsTier(cs_min_low,  cs_min_med,  cs_min_high,  profile.CurveShaperTiers[0]);
-                SetCsTier(cs_low_low,  cs_low_med,  cs_low_high,  profile.CurveShaperTiers[1]);
-                SetCsTier(cs_med_low,  cs_med_med,  cs_med_high,  profile.CurveShaperTiers[2]);
-                SetCsTier(cs_high_low, cs_high_med, cs_high_high, profile.CurveShaperTiers[3]);
-                SetCsTier(cs_max_low,  cs_max_med,  cs_max_high,  profile.CurveShaperTiers[4]);
+                for (int tier = 0; tier < 5; tier++)
+                    SetCsTier(CsGrid[tier][0], CsGrid[tier][1], CsGrid[tier][2], profile.CurveShaperTiers[tier]);
             }
 
             if (profile.Fmax.HasValue)
@@ -2635,7 +2607,7 @@ namespace ZenStatesDebugTool
                     HandleError("No CO profile saved.");
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 HandleError("Could not load saved profile!");
             }
@@ -2666,67 +2638,10 @@ namespace ZenStatesDebugTool
             }
         }
 
-        static bool TaskExists(string taskName)
-        {
-            // Open the task service
-            using (TaskService taskService = new TaskService())
-            {
-                // Attempt to retrieve the task
-                Task task = taskService.GetTask(taskName);
-                return task != null;
-            }
-        }
-
-        static void AddTaskToScheduler(string taskName, string executablePath, string profileName, int delaySeconds = 0)
-        {
-            using (TaskService taskService = new TaskService())
-            {
-                TaskDefinition taskDefinition = taskService.NewTask();
-
-                taskDefinition.RegistrationInfo.Description = "Run Ryzen SMU Debug Tool on user logon to apply a CO/PBO profile. Automatically created by RyzenSDT. Remove manually or from the checkbox in PBO tab.";
-                taskDefinition.Principal.UserId = WindowsIdentity.GetCurrent().Name;
-                taskDefinition.Principal.RunLevel = TaskRunLevel.Highest;
-                taskDefinition.Principal.LogonType = TaskLogonType.InteractiveToken;
-
-                LogonTrigger logonTrigger = new LogonTrigger();
-                logonTrigger.Delay = TimeSpan.FromSeconds(delaySeconds);
-                taskDefinition.Triggers.Add(logonTrigger);
-
-                ExecAction execAction = new ExecAction(executablePath, $"--applyprofile \"{profileName}\"");
-                taskDefinition.Actions.Add(execAction);
-
-                taskService.RootFolder.RegisterTaskDefinition(taskName, taskDefinition);
-            }
-        }
-
-        static void RemoveTaskFromScheduler(string taskName)
-        {
-            // Open the task service
-            using (TaskService taskService = new TaskService())
-            {
-                // Delete the task from the Task Scheduler
-                taskService.RootFolder.DeleteTask(taskName, false);
-            }
-        }
-
         private void ComboBoxStartupProfile_SelectedIndexChanged(object sender, EventArgs e)
         {
             if (_suppressStartupTaskUpdates) return;
             if (checkBoxApplyCOStartup.Checked) RegisterOrRemoveStartupTask();
-        }
-
-        private static string GetStartupProfileFromTask(string taskName)
-        {
-            using (TaskService taskService = new TaskService())
-            {
-                Task task = taskService.GetTask(taskName);
-                var exec = task?.Definition.Actions.OfType<ExecAction>().FirstOrDefault();
-                if (exec == null) return null;
-                int idx = exec.Arguments.IndexOf("--applyprofile", StringComparison.OrdinalIgnoreCase);
-                if (idx < 0) return null;
-                string rest = exec.Arguments.Substring(idx + "--applyprofile".Length).Trim().Trim('"');
-                return rest.Length > 0 ? rest : null;
-            }
         }
 
         private void RegisterOrRemoveStartupTask()
@@ -2734,12 +2649,12 @@ namespace ZenStatesDebugTool
             string name = comboBoxStartupProfile?.SelectedItem as string;
             if (checkBoxApplyCOStartup.Checked && !string.IsNullOrEmpty(name))
             {
-                if (TaskExists("RyzenSDT")) RemoveTaskFromScheduler("RyzenSDT");
-                AddTaskToScheduler("RyzenSDT", Application.ExecutablePath, name, 5);
+                if (StartupTaskService.Exists()) StartupTaskService.Remove();
+                StartupTaskService.Register(Application.ExecutablePath, name, 5);
             }
-            else if (!checkBoxApplyCOStartup.Checked && TaskExists("RyzenSDT"))
+            else if (!checkBoxApplyCOStartup.Checked && StartupTaskService.Exists())
             {
-                RemoveTaskFromScheduler("RyzenSDT");
+                StartupTaskService.Remove();
             }
         }
 
@@ -2755,11 +2670,6 @@ namespace ZenStatesDebugTool
             }
             RegisterOrRemoveStartupTask();
             PrependResult($"Startup settings saved." + Environment.NewLine);
-        }
-
-        private void tableLayoutPanel14_Paint(object sender, PaintEventArgs e)
-        {
-
         }
 
         private void ButtonApplyCoreMap_Click(object sender, EventArgs e)
@@ -2897,8 +2807,10 @@ namespace ZenStatesDebugTool
 
         private void ButtonApplyFMax_Click(object sender, EventArgs e)
         {
-            if (cpu.SetFMax((uint)numericUpDownFmax.Value)) {
-                numericUpDownFmax.Value = cpu.GetFMax();
+            uint targetFmax = (uint)numericUpDownFmax.Value;
+            uint? newFmax = Hardware.Locked(() => cpu.SetFMax(targetFmax) ? (uint?)cpu.GetFMax() : null);
+            if (newFmax.HasValue) {
+                numericUpDownFmax.Value = newFmax.Value;
             }
         }
 
@@ -2954,7 +2866,7 @@ namespace ZenStatesDebugTool
                 SetStatusText(name + ": Dumping memory, please wait...");
 
                 var stopwatch = Stopwatch.StartNew();
-                await System.Threading.Tasks.Task.Run(() => MemoryDumper.Dump32BitAddressSpaceAsBytes(name, startAddress, endAddress));
+                await System.Threading.Tasks.Task.Run(() => MemoryDumper.Dump32BitAddressSpaceAsBytes(cpu, name, startAddress, endAddress));
                 stopwatch.Stop();
 
                 string elapsedTime = $"{stopwatch.Elapsed.TotalSeconds:F2}";
@@ -2986,25 +2898,18 @@ namespace ZenStatesDebugTool
 
             var errorMessages = new List<string>();
 
-            if (cpu.SetCurveShaperMargin(marginHigh: (int)cs_min_high.Value, marginMedium: (int)cs_min_med.Value, marginLow: (int)cs_min_low.Value, 0) != SMU.Status.OK)
+            lock (Hardware.Sync)
             {
-                errorMessages.Add("Failed to set Curve Shaper margins for frequency tier 0 (min).");
-            }
-            if (cpu.SetCurveShaperMargin(marginHigh: (int)cs_low_high.Value, marginMedium: (int)cs_low_med.Value, marginLow: (int)cs_low_low.Value, 1) != SMU.Status.OK)
-            {
-                errorMessages.Add("Failed to set Curve Shaper margins for frequency tier 1 (low).");
-            }
-            if (cpu.SetCurveShaperMargin(marginHigh: (int)cs_med_high.Value, marginMedium: (int)cs_med_med.Value, marginLow: (int)cs_med_low.Value, 2) != SMU.Status.OK)
-            {
-                errorMessages.Add("Failed to set Curve Shaper margins for frequency tier 2 (medium).");
-            }
-            if (cpu.SetCurveShaperMargin(marginHigh: (int)cs_high_high.Value, marginMedium: (int)cs_high_med.Value, marginLow: (int)cs_high_low.Value, 3) != SMU.Status.OK)
-            {
-                errorMessages.Add("Failed to set Curve Shaper margins for frequency tier 3 (high).");
-            }
-            if (cpu.SetCurveShaperMargin(marginHigh: (int)cs_max_high.Value, marginMedium: (int)cs_max_med.Value, marginLow: (int)cs_max_low.Value, 4) != SMU.Status.OK)
-            {
-                errorMessages.Add("Failed to set Curve Shaper margins for frequency tier 4 (max).");
+                for (int tier = 0; tier < 5; tier++)
+                {
+                    if (cpu.SetCurveShaperMargin(
+                            marginHigh: (int)CsGrid[tier][2].Value,
+                            marginMedium: (int)CsGrid[tier][1].Value,
+                            marginLow: (int)CsGrid[tier][0].Value, tier) != SMU.Status.OK)
+                    {
+                        errorMessages.Add($"Failed to set Curve Shaper margins for frequency tier {tier} ({CsTierNames[tier]}).");
+                    }
+                }
             }
 
             if (errorMessages.Count == 0)

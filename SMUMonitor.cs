@@ -84,11 +84,17 @@ namespace ZenStatesDebugTool
             }
         }
 
-        // Runs on the background thread: all the SMU reads happen here.
+        // Runs on the background thread: all the SMU reads happen here. The reads are
+        // serialized against the rest of the app via Hardware.Sync; the UI append
+        // (AppendRow) marshals with BeginInvoke and stays outside the lock.
         private void PollOnce()
         {
-            uint msg = CPU.ReadDword(SMU_ADDR_MSG);
-            uint arg = CPU.ReadDword(SMU_ADDR_ARG);
+            uint msg, arg;
+            lock (Hardware.Sync)
+            {
+                msg = CPU.ReadDword(SMU_ADDR_MSG);
+                arg = CPU.ReadDword(SMU_ADDR_ARG);
+            }
 
             if (msg == prevCmdValue && arg == prevArgValue)
                 return;
@@ -96,9 +102,13 @@ namespace ZenStatesDebugTool
             prevCmdValue = msg;
             prevArgValue = arg;
 
-            uint rsp = CPU.ReadDword(SMU_ADDR_RSP);
-            if (rsp != 0)
-                arg = CPU.ReadDword(SMU_ADDR_ARG);
+            uint rsp;
+            lock (Hardware.Sync)
+            {
+                rsp = CPU.ReadDword(SMU_ADDR_RSP);
+                if (rsp != 0)
+                    arg = CPU.ReadDword(SMU_ADDR_ARG);
+            }
 
             var item = new SmuMonitorItem
             {

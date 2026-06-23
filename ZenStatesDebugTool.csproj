@@ -39,10 +39,6 @@
   <PropertyGroup>
     <ApplicationIcon>Resources\ZenStatesDebug.ico</ApplicationIcon>
   </PropertyGroup>
-  <PropertyGroup />
-  <PropertyGroup>
-    <TargetZone>LocalIntranet</TargetZone>
-  </PropertyGroup>
   <PropertyGroup>
     <GenerateManifests>false</GenerateManifests>
   </PropertyGroup>
@@ -103,7 +99,6 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="CpuSingleton.cs" />
     <Compile Include="Profiles\Profile.cs" />
     <Compile Include="Profiles\ProfileManager.cs" />
     <Compile Include="Profiles\ProfileApplier.cs" />
@@ -127,6 +122,9 @@
       <DependentUpon>PowerTableMonitor.cs</DependentUpon>
     </Compile>
     <Compile Include="Utils\WmiCmdListItem.cs" />
+    <Compile Include="Utils\Hardware.cs" />
+    <Compile Include="Utils\CoreTopology.cs" />
+    <Compile Include="Utils\StartupTaskService.cs" />
     <Compile Include="Utils\SmuAddressSet.cs" />
     <Compile Include="Utils\UiSettings.cs" />
     <Compile Include="Utils\UiSettingsManager.cs" />

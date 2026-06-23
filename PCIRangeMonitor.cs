@@ -48,11 +48,13 @@ namespace ZenStatesDebugTool
 
             InitializeComponent();
 
-            // Initial fill (one-time, synchronous).
+            // Initial fill (one-time, synchronous). Reads serialized against the rest of
+            // the app via Hardware.Sync.
             for (int i = 0; i < count; i++)
             {
                 uint value = 0;
-                CPU.ReadDwordEx(addresses[i], ref value);
+                lock (Hardware.Sync)
+                    CPU.ReadDwordEx(addresses[i], ref value);
                 prevValues[i] = value;
                 list.Add(MakeItem(addresses[i], value));
             }
@@ -81,11 +83,14 @@ namespace ZenStatesDebugTool
                 try
                 {
                     var current = new uint[addresses.Length];
-                    for (int i = 0; i < addresses.Length; i++)
+                    lock (Hardware.Sync)
                     {
-                        uint value = 0;
-                        CPU.ReadDwordEx(addresses[i], ref value);
-                        current[i] = value;
+                        for (int i = 0; i < addresses.Length; i++)
+                        {
+                            uint value = 0;
+                            CPU.ReadDwordEx(addresses[i], ref value);
+                            current[i] = value;
+                        }
                     }
 
                     // All UI mutation happens here, on the form's thread, in one marshal.
@@ -126,6 +131,7 @@ namespace ZenStatesDebugTool
         private void PCIRangeMonitor_FormClosing(object sender, FormClosingEventArgs e)
         {
             RefreshTimer.Stop();
+            RefreshTimer.Dispose();
         }
 
         private void PCIRangeMonitor_Shown(object sender, EventArgs e)

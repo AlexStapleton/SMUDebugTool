@@ -76,25 +76,17 @@ namespace ZenStatesDebugTool.Profiles
                 r.Fail("Failed to set PBO scalar.");
         }
 
-        // Replicated from SettingsForm so the apply path is form-independent.
+        // Delegates to the shared CoreTopology helper so the UI and headless apply paths
+        // can never disagree about core enable/encode logic.
         private static bool IsCoreEnabled(Cpu cpu, int coreIndex)
         {
-            int mapIndex = coreIndex / 8;
-            int coreInGroup = coreIndex % 8;
-            return mapIndex >= 0
-                && mapIndex < cpu.info.topology.coreDisableMap.Length
-                && ((~cpu.info.topology.coreDisableMap[mapIndex] >> coreInGroup) & 1) == 1;
+            return CoreTopology.IsCoreEnabled(cpu.info.topology.coreDisableMap, coreIndex);
         }
 
         private static uint EncodeCoreMarginBitmask(Cpu cpu, int coreIndex, int coresPerCCD = 8)
         {
-            if (cpu.smu.SMU_TYPE >= SMU.SmuType.TYPE_APU0 && cpu.smu.SMU_TYPE <= SMU.SmuType.TYPE_APU2)
-                return (uint)coreIndex;
-            int ccdIndex = coreIndex / coresPerCCD;
-            int localCoreIndex = coreIndex % coresPerCCD;
-            int ccdMask = ccdIndex << 8;
-            int mask = ccdMask | localCoreIndex;
-            return (uint)(mask << 20);
+            bool isApu = cpu.smu.SMU_TYPE >= SMU.SmuType.TYPE_APU0 && cpu.smu.SMU_TYPE <= SMU.SmuType.TYPE_APU2;
+            return CoreTopology.EncodeCoreMarginBitmask(isApu, coreIndex, coresPerCCD);
         }
     }
 }
