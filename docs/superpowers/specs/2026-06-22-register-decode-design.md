@@ -72,12 +72,14 @@ Value widths:
   (`SettingsForm.cs:1817`) — done in floating point to avoid integer-division
   error. Also: HWCR (`0xC0010015`), PStateCurLim (`0xC0010061`), PStateCtl
   (`0xC0010062`), PStateStat (`0xC0010063`).
-  - **New, not currently computed by the tool (lower confidence — validate
-    against AMD PPR / hardware before shipping):** `PstateEn` is bit 63, i.e.
-    in the high dword `edx`, so it requires the 64-bit value, not just `eax`;
-    Voltage from CpuVid via the SVI2 plane formula `1.55 - 0.00625 * CpuVid` V
-    is a standard convention but is **not** present anywhere in the existing
-    code, so it must be confirmed before relying on it.
+  - **New fields, not currently computed by the tool (now validated — see
+    Assumption validation):** `PstateEn` is bit 63, i.e. in the high dword
+    `edx`, so it requires the 64-bit value, not just `eax`. Voltage from CpuVid
+    must **not** be hardcoded — reuse ZenStates-Core's own
+    `Utils.VidToVoltage(vid)` (SVI2) or `Utils.VidToVoltageSVI3(vid)` (Zen4+),
+    selected by CPU generation via `cpu.info.codeName` (the library already
+    branches on `CodeName`, cf. `Cpu.GetSVI2Info(CodeName)`). The two planes
+    give very different results, so generation selection is mandatory.
 - **CPUID:** leaf `0x00000001` (family/base model/ext model/stepping from
   eax); `0x80000008` if straightforward.
 - **PCI:** none required initially; structure supports adding fixed addresses
@@ -204,12 +206,22 @@ Verified before finalizing this spec:
   addresses via `cpu.ReadDword`/`ReadDwordEx` (`PCIRangeMonitor.cs:57`,
   `SettingsForm.cs:1370`). Confirmed.
 
-Flagged as **not yet validated** (must confirm during implementation):
+Previously-flagged items, now resolved:
 
-- The CpuVid → Voltage formula (`1.55 - 0.00625*CpuVid`) is the standard SVI2
-  convention but appears nowhere in the existing tool.
-- `PstateEn` at bit 63 (high dword) is per AMD PPR but is not currently decoded
-  by the tool.
+- **Voltage formula — CONFIRMED, with a correction.** Executing the library
+  directly: `Utils.VidToVoltage(40) = 1.3`, `VidToVoltage(0) = 1.55`,
+  `VidToVoltage(1) = 1.54375` → exactly the SVI2 plane `1.55 - 0.00625*VID`.
+  However `Utils.VidToVoltageSVI3(40) = 0.445` — Zen4/Zen5 use a different
+  plane. Conclusion: do **not** hardcode the formula; call the library's
+  `VidToVoltage` / `VidToVoltageSVI3` selected by `cpu.info.codeName`. Grep
+  confirmed no VID→voltage math exists in this repo today (only false-positive
+  `RowHeadersVisible` hits).
+- **PstateEn at bit 63 — CONFIRMED.** Per AMD PPR (Family 17h/19h
+  MSRC001_006[4..B]), bit 63 of the PStateDef MSR is `PstateEn`. Grep confirmed
+  the repo decodes no bit-63 / high-dword field anywhere today. The library
+  models only the *current* HW p-state status (`Cpu.HwPstateStatus`:
+  CurCpuFid/DfsId/Vid/HwPstate) — it does not expose a PStateDef enable bit, so
+  this field is new work; it is a documented constant, not a guess.
 
 ## Out of scope
 
