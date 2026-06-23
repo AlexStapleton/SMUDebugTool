@@ -130,6 +130,8 @@
     <Compile Include="Utils\UiSettingsManager.cs" />
     <Compile Include="Utils\TabLayout.cs" />
     <Compile Include="Utils\TabVisibilityController.cs" />
+    <Compile Include="Utils\RegisterDefinition.cs" />
+    <Compile Include="Utils\RegisterDecoder.cs" />
     <Compile Include="ResultForm.cs">
       <SubType>Form</SubType>
     </Compile>

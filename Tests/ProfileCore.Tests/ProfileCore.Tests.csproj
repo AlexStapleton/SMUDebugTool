@@ -19,5 +19,7 @@
     <Compile Include="..\..\Utils\UiSettingsManager.cs" Link="UiSettingsManager.cs" />
     <Compile Include="..\..\Utils\TabLayout.cs" Link="TabLayout.cs" />
     <Compile Include="..\..\Utils\CoreTopology.cs" Link="CoreTopology.cs" />
+    <Compile Include="..\..\Utils\RegisterDefinition.cs" Link="RegisterDefinition.cs" />
+    <Compile Include="..\..\Utils\RegisterDecoder.cs" Link="RegisterDecoder.cs" />
   </ItemGroup>
 </Project>
