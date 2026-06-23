@@ -41,5 +41,22 @@ namespace ProfileCore.Tests
             var map = SmuCommandNames.Build(new[] { Kv("X", 0x01) });
             Assert.Null(SmuCommandNames.Resolve(map, 0x99));
         }
+
+        [Fact]
+        public void Build_returns_empty_map_for_null_input()
+        {
+            Assert.Empty(SmuCommandNames.Build(null));
+        }
+
+        [Fact]
+        public void Build_does_not_duplicate_same_name_for_same_value()
+        {
+            var map = SmuCommandNames.Build(new[]
+            {
+                Kv("Foo", 0x10),
+                Kv("Foo", 0x10),
+            });
+            Assert.Equal("Foo", SmuCommandNames.Resolve(map, 0x10));
+        }
     }
 }
