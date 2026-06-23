@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using ZenStates.Core;
+using static ZenStates.Core.Cpu;
 
 namespace ZenStatesDebugTool
 {
@@ -38,33 +39,33 @@ namespace ZenStatesDebugTool
 
         // Generation-aware VID -> voltage, reusing the library's own conversions.
         // SVI3 set = Zen4 and later; everything else uses SVI2.
-        public static Func<uint, double> GetVidToVoltage(CpuCodeName codeName)
+        public static Func<uint, double> GetVidToVoltage(CodeName codeName)
         {
             if (IsSvi3(codeName))
                 return ZenStates.Core.Utils.VidToVoltageSVI3;
             return ZenStates.Core.Utils.VidToVoltage;
         }
 
-        private static bool IsSvi3(CpuCodeName c)
+        private static bool IsSvi3(CodeName c)
         {
             switch (c)
             {
-                case CpuCodeName.Raphael:
-                case CpuCodeName.GraniteRidge:
-                case CpuCodeName.DragonRange:
-                case CpuCodeName.Phoenix:
-                case CpuCodeName.Phoenix2:
-                case CpuCodeName.HawkPoint:
-                case CpuCodeName.StrixPoint:
-                case CpuCodeName.StrixHalo:
-                case CpuCodeName.KrackanPoint:
-                case CpuCodeName.KrackanPoint2:
-                case CpuCodeName.Genoa:
-                case CpuCodeName.Bergamo:
-                case CpuCodeName.Turin:
-                case CpuCodeName.TurinD:
-                case CpuCodeName.StormPeak:    // Zen4 Threadripper
-                case CpuCodeName.ShimadaPeak:  // Zen5 Threadripper
+                case CodeName.Raphael:
+                case CodeName.GraniteRidge:
+                case CodeName.DragonRange:
+                case CodeName.Phoenix:
+                case CodeName.Phoenix2:
+                case CodeName.HawkPoint:
+                case CodeName.StrixPoint:
+                case CodeName.StrixHalo:
+                case CodeName.KrackanPoint:
+                case CodeName.KrackanPoint2:
+                case CodeName.Genoa:
+                case CodeName.Bergamo:
+                case CodeName.Turin:
+                case CodeName.TurinD:
+                case CodeName.StormPeak:    // Zen4 Threadripper
+                case CodeName.ShimadaPeak:  // Zen5 Threadripper
                     return true;
                 default:
                     return false;

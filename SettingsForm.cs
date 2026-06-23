@@ -29,6 +29,8 @@ namespace ZenStatesDebugTool
         private BackgroundWorker backgroundWorker1;
         private readonly NUMAUtil _numaUtil;
         private readonly Cpu cpu;
+        private DecodeContext decodeContext = DecodeContext.None;
+        private IReadOnlyDictionary<uint, string> smuNameMap;
         List<SmuAddressSet> matches = new List<SmuAddressSet>();
         private readonly Mailbox testMailbox = new Mailbox();
         private readonly string wmiAMDACPI = "AMD_ACPI";
@@ -123,6 +125,11 @@ namespace ZenStatesDebugTool
                 smuInfoLabel.Text = cpu.systemInfo.SmuVersionString;
                 firmwareInfoLabel.Text = $"{cpu.systemInfo.PatchLevel:X8}";
                 cpuIdLabel.Text = $"{cpu.systemInfo.CpuIdString} ({cpu.info.codeName})";
+                decodeContext = new DecodeContext
+                {
+                    VidToVoltage = SmuDecodeAdapter.GetVidToVoltage(cpu.info.codeName)
+                };
+                smuNameMap = SmuCommandNames.Build(SmuDecodeAdapter.ReadMessages(cpu.smu));
                 configInfoLabel.Text = $"{cpu.info.topology.ccds} CCD / {cpu.info.topology.ccxs} CCX / {cpu.systemInfo.PhysicalCoreCount} physical cores";
             }
             catch { }
@@ -1275,6 +1282,19 @@ namespace ZenStatesDebugTool
                 Environment.NewLine;
             Debug.WriteLine($"Response: {responseString}");
             PrependResult(responseString);
+            if (TryConvertToUintNoThrow(textBoxPciAddress.Text, out uint pciAddr))
+            {
+                string decoded = RegisterDecoder.Decode(RegisterKind.Pci, pciAddr, data, decodeContext);
+                if (!string.IsNullOrEmpty(decoded))
+                    PrependResult(decoded + Environment.NewLine);
+            }
+        }
+
+        private static bool TryConvertToUintNoThrow(string text, out uint address)
+        {
+            address = 0;
+            try { address = Convert.ToUInt32(text.Trim().ToLowerInvariant(), 16); return true; }
+            catch { return false; }
         }
 
         private void ShowResultForm(string title="Result", string result="No result")
@@ -2057,6 +2077,11 @@ namespace ZenStatesDebugTool
             {
                 textBoxMsrEdx.Text = $"0x{edx:X8}";
                 textBoxMsrEax.Text = $"0x{eax:X8}";
+
+                ulong value = ((ulong)edx << 32) | eax;
+                string decoded = RegisterDecoder.Decode(RegisterKind.Msr, msr, value, decodeContext);
+                if (!string.IsNullOrEmpty(decoded))
+                    PrependResult(decoded + Environment.NewLine);
             }
         }
 
@@ -2141,6 +2166,10 @@ namespace ZenStatesDebugTool
                 textBoxCPUIDebx.Text = $"0x{ebx:X8}";
                 textBoxCPUIDecx.Text = $"0x{ecx:X8}";
                 textBoxCPUIDedx.Text = $"0x{edx:X8}";
+
+                string decoded = RegisterDecoder.Decode(RegisterKind.Cpuid, index, eax, decodeContext);
+                if (!string.IsNullOrEmpty(decoded))
+                    PrependResult(decoded + Environment.NewLine);
             }
         }
 
