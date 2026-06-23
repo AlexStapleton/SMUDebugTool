@@ -9,7 +9,7 @@ namespace ZenStatesDebugTool
     // Supplied by the caller; when a needed delegate is null the derived line is skipped.
     public sealed class DecodeContext
     {
-        public Func<uint, double> VidToVoltage;
+        public Func<uint, double> VidToVoltage { get; set; }
         public static readonly DecodeContext None = new DecodeContext();
     }
 

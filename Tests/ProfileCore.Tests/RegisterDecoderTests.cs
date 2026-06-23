@@ -15,5 +15,14 @@ namespace ProfileCore.Tests
         {
             Assert.Equal(expected, RegisterDecoder.Extract(value, hi, lo));
         }
+
+        [Theory]
+        [InlineData(0, -1)]   // lo < 0
+        [InlineData(3, 5)]    // hi < lo
+        [InlineData(64, 0)]   // hi > 63
+        public void Extract_throws_on_invalid_range(int hi, int lo)
+        {
+            Assert.Throws<System.ArgumentOutOfRangeException>(() => RegisterDecoder.Extract(0xFFUL, hi, lo));
+        }
     }
 }
