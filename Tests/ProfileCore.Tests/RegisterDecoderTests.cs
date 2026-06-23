@@ -30,5 +30,42 @@ namespace ProfileCore.Tests
         {
             Assert.Equal("", RegisterDecoder.Decode(RegisterKind.Msr, 0xDEADBEEF, 0x12345678UL));
         }
+
+        // CpuFid=0xA8(168), CpuDfsId=8, CpuVid=0x28(40), PstateEn=1 (bit 63).
+        // eax = (40<<14)|(8<<8)|168 = 0x000A08A8 ; edx = 0x80000000 (PstateEn).
+        private const ulong SamplePStateDef = (0x80000000UL << 32) | 0x000A08A8UL;
+
+        private static readonly DecodeContext Svi2Ctx =
+            new DecodeContext { VidToVoltage = v => 1.55 - 0.00625 * v };
+
+        [Fact]
+        public void Decode_pstatedef_shows_name_fields_and_derived_values()
+        {
+            string s = RegisterDecoder.Decode(RegisterKind.Msr, 0xC0010064, SamplePStateDef, Svi2Ctx);
+
+            Assert.Contains("PStateDef0 (0xC0010064) - P-State 0 definition", s);
+            Assert.Contains("CpuFid [7:0] = 0xA8 (168)", s);
+            Assert.Contains("CpuDfsId [13:8] = 0x8 (8)", s);
+            Assert.Contains("CpuVid [21:14] = 0x28 (40)", s);
+            Assert.Contains("PstateEn [63] = 0x1 (1)", s);
+            Assert.Contains("-> Frequency: 4200 MHz", s);
+            Assert.Contains("-> Voltage: 1.300 V", s);
+        }
+
+        [Fact]
+        public void Decode_pstatedef_skips_voltage_when_no_context_helper()
+        {
+            string s = RegisterDecoder.Decode(RegisterKind.Msr, 0xC0010064, SamplePStateDef);
+            Assert.Contains("Frequency: 4200 MHz", s);
+            Assert.DoesNotContain("Voltage:", s);
+        }
+
+        [Fact]
+        public void Decode_pstatedef_address_offsets_resolve()
+        {
+            // 0xC001006B is PStateDef7.
+            string s = RegisterDecoder.Decode(RegisterKind.Msr, 0xC001006B, SamplePStateDef, Svi2Ctx);
+            Assert.Contains("PStateDef7 (0xC001006B)", s);
+        }
     }
 }
