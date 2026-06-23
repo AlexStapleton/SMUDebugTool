@@ -23,5 +23,6 @@
     <Compile Include="..\..\Utils\RegisterDecoder.cs" Link="RegisterDecoder.cs" />
     <Compile Include="..\..\Utils\RegisterCatalog.cs" Link="RegisterCatalog.cs" />
     <Compile Include="..\..\Utils\SmuCommandNames.cs" Link="SmuCommandNames.cs" />
+    <Compile Include="..\..\Utils\PmTableLabeling.cs" Link="PmTableLabeling.cs" />
   </ItemGroup>
 </Project>
