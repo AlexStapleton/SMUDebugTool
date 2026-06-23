@@ -44,12 +44,17 @@ namespace ZenStatesDebugTool
                 if (structure != null && structure.TryGetValue(offset, out SensorInfo info))
                 {
                     row.Name = info.Name ?? "";
-                    row.Scaled = (table[i] * info.Scale).ToString("F3", CultureInfo.InvariantCulture);
+                    row.Scaled = FormatScaled(table[i], info);
                 }
 
                 rows.Add(row);
             }
             return rows;
         }
+
+        // Single source of truth for the scaled-value formatting, so the WinForms
+        // PMTable grid and this pure helper can't drift apart.
+        public static string FormatScaled(float raw, SensorInfo info)
+            => (raw * info.Scale).ToString("F3", CultureInfo.InvariantCulture);
     }
 }

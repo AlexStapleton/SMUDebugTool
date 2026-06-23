@@ -41,7 +41,7 @@ namespace ZenStatesDebugTool
                 if (structure != null && structure.TryGetValue(offset, out SensorInfo info))
                 {
                     name = info.Name ?? "";
-                    scaled = (table[i] * info.Scale).ToString("F3", CultureInfo.InvariantCulture);
+                    scaled = PmTableLabeling.FormatScaled(table[i], info);
                 }
 
                 list.Add(new PowerMonitorItem
@@ -67,7 +67,7 @@ namespace ZenStatesDebugTool
                 item.Value = current.ToString("F6", CultureInfo.InvariantCulture);
 
                 if (structure != null && structure.TryGetValue((uint)(index * 4), out SensorInfo info))
-                    item.Scaled = (current * info.Scale).ToString("F3", CultureInfo.InvariantCulture);
+                    item.Scaled = PmTableLabeling.FormatScaled(current, info);
 
                 // Compare against the float max and only reformat the Max string when it grows.
                 if (current > maxes[index])
@@ -95,9 +95,10 @@ namespace ZenStatesDebugTool
         {
             CPU = cpu;
             lock (Hardware.Sync)
+            {
                 structure = SmuDecodeAdapter.GetPmTableStructure(cpu);
-            lock (Hardware.Sync)
                 cpu.RefreshPowerTable();
+            }
 
             PowerCfgTimer.Interval = 2000;
             PowerCfgTimer.Tick += new EventHandler(PowerCfgTimer_Tick);
