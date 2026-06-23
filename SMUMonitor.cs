@@ -37,7 +37,10 @@ namespace ZenStatesDebugTool
         public SMUMonitor(Cpu cpu, uint addrMsg, uint addrArg, uint addrRsp)
         {
             CPU = cpu;
-            nameMap = SmuCommandNames.Build(SmuDecodeAdapter.ReadMessages(cpu.smu));
+            // Reflects over the in-memory SMU_MSG_* tables; serialized under the
+            // shared lock for consistency with the rest of the SMU access path.
+            lock (Hardware.Sync)
+                nameMap = SmuCommandNames.Build(SmuDecodeAdapter.ReadMessages(cpu.smu));
             SMU_ADDR_MSG = addrMsg;
             SMU_ADDR_ARG = addrArg;
             SMU_ADDR_RSP = addrRsp;
