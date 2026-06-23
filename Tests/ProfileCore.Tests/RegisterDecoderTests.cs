@@ -56,7 +56,7 @@ namespace ProfileCore.Tests
         public void Decode_pstatedef_skips_voltage_when_no_context_helper()
         {
             string s = RegisterDecoder.Decode(RegisterKind.Msr, 0xC0010064, SamplePStateDef);
-            Assert.Contains("Frequency: 4200 MHz", s);
+            Assert.Contains("-> Frequency: 4200 MHz", s);
             Assert.DoesNotContain("Voltage:", s);
         }
 

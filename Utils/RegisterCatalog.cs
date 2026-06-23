@@ -27,10 +27,9 @@ namespace ZenStatesDebugTool
             for (uint i = 0; i < 8; i++)
             {
                 uint addr = PStateDef0 + i;
-                uint index = i; // capture per-iteration for the name
                 Add(new RegisterDefinition(
                     RegisterKind.Msr, addr,
-                    $"PStateDef{index}", $"P-State {index} definition",
+                    $"PStateDef{i}", $"P-State {i} definition",
                     new List<FieldDefinition>
                     {
                         new FieldDefinition("CpuFid", 7, 0),
