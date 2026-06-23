@@ -3,21 +3,21 @@ using System.Globalization;
 
 namespace ZenStatesDebugTool
 {
-    // A WinForms-free projection of one ZenStates SmuSensorDefinition.
+    // A WinForms-free mirror of one ZenStates SmuSensorDefinition entry.
     public struct SensorInfo
     {
-        public string Name;
-        public float Scale;
+        public readonly string Name;
+        public readonly float Scale;
         public SensorInfo(string name, float scale) { Name = name; Scale = scale; }
     }
 
     public sealed class LabeledRow
     {
-        public int Index;
-        public uint Offset;
-        public float Raw;
-        public string Name;   // "" when the offset is unlabeled
-        public string Scaled; // "" when the offset is unlabeled
+        public int Index { get; set; }
+        public uint Offset { get; set; }
+        public float Raw { get; set; }
+        public string Name { get; set; }   // "" when the offset is unlabeled
+        public string Scaled { get; set; } // "" when the offset is unlabeled
     }
 
     public static class PmTableLabeling
