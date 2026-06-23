@@ -1348,6 +1348,9 @@ namespace ZenStatesDebugTool
 
                 if (status == SMU.Status.OK)
                 {
+                    string cmdName = SmuCommandNames.Resolve(smuNameMap, command);
+                    if (cmdName != null)
+                        PrependResult($"CMD: 0x{command:X} ({cmdName}){Environment.NewLine}");
                     ShowResultMessageBox(args);
                 }
 
