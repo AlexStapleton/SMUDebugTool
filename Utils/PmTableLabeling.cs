@@ -22,8 +22,10 @@ namespace ZenStatesDebugTool
 
     public static class PmTableLabeling
     {
-        // Pairs each table slot (offset = index*4) with its sensor name/scaled
-        // value when the structure defines it; blank otherwise.
+        // Pairs each table slot with its sensor name/scaled value when the structure
+        // defines it; blank otherwise. ZenStates' GetPmTableStructure keys sensors by
+        // float-array element index (not byte offset), so the lookup uses the index;
+        // Offset (index*4) is the byte offset kept for display only.
         public static List<LabeledRow> Label(float[] table, IReadOnlyDictionary<uint, SensorInfo> structure)
         {
             var rows = new List<LabeledRow>();
@@ -31,17 +33,16 @@ namespace ZenStatesDebugTool
 
             for (int i = 0; i < table.Length; i++)
             {
-                uint offset = (uint)(i * 4);
                 var row = new LabeledRow
                 {
                     Index = i,
-                    Offset = offset,
+                    Offset = (uint)(i * 4),
                     Raw = table[i],
                     Name = "",
                     Scaled = "",
                 };
 
-                if (structure != null && structure.TryGetValue(offset, out SensorInfo info))
+                if (structure != null && structure.TryGetValue((uint)i, out SensorInfo info))
                 {
                     row.Name = info.Name ?? "";
                     row.Scaled = FormatScaled(table[i], info);

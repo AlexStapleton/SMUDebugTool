@@ -35,10 +35,10 @@ namespace ZenStatesDebugTool
             {
                 var valueStr = table[i].ToString("F6", CultureInfo.InvariantCulture);
                 maxes[i] = table[i];
-                uint offset = (uint)(i * 4);
+                // The structure is keyed by float-array element index, not byte offset.
                 string name = "";
                 string scaled = "";
-                if (structure != null && structure.TryGetValue(offset, out SensorInfo info))
+                if (structure != null && structure.TryGetValue((uint)i, out SensorInfo info))
                 {
                     name = info.Name ?? "";
                     scaled = PmTableLabeling.FormatScaled(table[i], info);
@@ -66,7 +66,7 @@ namespace ZenStatesDebugTool
                 // Current value is (re)formatted each tick; one float format is cheap.
                 item.Value = current.ToString("F6", CultureInfo.InvariantCulture);
 
-                if (structure != null && structure.TryGetValue((uint)(index * 4), out SensorInfo info))
+                if (structure != null && structure.TryGetValue((uint)index, out SensorInfo info))
                     item.Scaled = PmTableLabeling.FormatScaled(current, info);
 
                 // Compare against the float max and only reformat the Max string when it grows.
@@ -94,9 +94,11 @@ namespace ZenStatesDebugTool
         public PowerTableMonitor(Cpu cpu)
         {
             CPU = cpu;
+            uint pmTableVersion;
             lock (Hardware.Sync)
             {
                 structure = SmuDecodeAdapter.GetPmTableStructure(cpu);
+                pmTableVersion = cpu.RyzenSmu.PmTableVersion;
                 cpu.RefreshPowerTable();
             }
 
@@ -104,6 +106,13 @@ namespace ZenStatesDebugTool
             PowerCfgTimer.Tick += new EventHandler(PowerCfgTimer_Tick);
 
             InitializeComponent();
+
+            // Surface the PM-table version and whether this build has a sensor layout
+            // for it, so an unlabeled table (unsupported version) is distinguishable
+            // from a bug.
+            Text = structure != null
+                ? $"PowerTableMonitor — PM table 0x{pmTableVersion:X} (decoded)"
+                : $"PowerTableMonitor — PM table 0x{pmTableVersion:X} (no layout, raw only)";
 
             dataGridView1.DataSource = list;
 
