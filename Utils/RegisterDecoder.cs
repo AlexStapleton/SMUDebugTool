@@ -32,8 +32,10 @@ namespace ZenStatesDebugTool
             foreach (FieldDefinition f in def.Fields)
             {
                 ulong fieldVal;
+                // A bad bit range is a catalog-data bug, not a runtime condition;
+                // skip the field rather than failing the whole decode.
                 try { fieldVal = Extract(value, f.HighBit, f.LowBit); }
-                catch { continue; }
+                catch (ArgumentOutOfRangeException) { continue; }
 
                 string bits = f.HighBit == f.LowBit ? $"{f.HighBit}" : $"{f.HighBit}:{f.LowBit}";
                 sb.AppendLine($"  {f.Name} [{bits}] = 0x{fieldVal:X} ({fieldVal})");
@@ -42,8 +44,10 @@ namespace ZenStatesDebugTool
             foreach (var derive in def.Derived)
             {
                 string line;
+                // Derived delegates do arithmetic / call external helpers (e.g. voltage);
+                // a failure there must not abort the rest of the decode.
                 try { line = derive(value, ctx); }
-                catch { line = null; }
+                catch (Exception) { line = null; }
                 if (!string.IsNullOrEmpty(line))
                     sb.AppendLine($"  -> {line}");
             }
