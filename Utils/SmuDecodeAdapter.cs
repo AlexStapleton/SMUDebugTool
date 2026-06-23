@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Reflection;
 using ZenStates.Core;
@@ -25,7 +26,7 @@ namespace ZenStatesDebugTool
             if (mailbox == null) yield break;
             foreach (PropertyInfo p in mailbox.GetType().GetProperties())
             {
-                if (!p.Name.StartsWith("SMU_MSG_")) continue;
+                if (!p.Name.StartsWith("SMU_MSG_", StringComparison.Ordinal)) continue;
                 if (p.PropertyType != typeof(uint)) continue;
                 uint value;
                 try { value = (uint)p.GetValue(mailbox); }
@@ -37,11 +38,11 @@ namespace ZenStatesDebugTool
 
         // Generation-aware VID -> voltage, reusing the library's own conversions.
         // SVI3 set = Zen4 and later; everything else uses SVI2.
-        public static System.Func<uint, double> GetVidToVoltage(CpuCodeName codeName)
+        public static Func<uint, double> GetVidToVoltage(CpuCodeName codeName)
         {
             if (IsSvi3(codeName))
-                return v => ZenStates.Core.Utils.VidToVoltageSVI3(v);
-            return v => ZenStates.Core.Utils.VidToVoltage(v);
+                return ZenStates.Core.Utils.VidToVoltageSVI3;
+            return ZenStates.Core.Utils.VidToVoltage;
         }
 
         private static bool IsSvi3(CpuCodeName c)
