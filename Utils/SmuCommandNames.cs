@@ -10,7 +10,7 @@ namespace ZenStatesDebugTool
     {
         // Builds value -> name. Zero-valued (unsupported/unset) messages are
         // skipped; multiple names sharing a value are joined with "/".
-        public static Dictionary<uint, string> Build(IEnumerable<KeyValuePair<string, uint>> messages)
+        public static IReadOnlyDictionary<uint, string> Build(IEnumerable<KeyValuePair<string, uint>> messages)
         {
             var map = new Dictionary<uint, string>();
             if (messages == null) return map;
