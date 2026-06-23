@@ -64,11 +64,20 @@ Value widths:
 
 #### Initial curated set
 
-- **MSR:** PStateDef 0–7 (`0xC0010064`–`0xC001006B`) with CpuFid [7:0],
-  CpuDfsId [13:8], CpuVid [21:14], IddValue [29:22], IddDiv [31:30],
-  PstateEn [63], plus computed Frequency (MHz) and Voltage (V) using the same
-  math already at `SettingsForm.cs:1742`; HWCR (`0xC0010015`); PStateCurLim
-  (`0xC0010061`); PStateCtl (`0xC0010062`); PStateStat (`0xC0010063`).
+- **MSR:** PStateDef 0–7 (`0xC0010064`–`0xC001006B`). The bit fields and
+  Frequency are verified against the existing `CalculatePstateDetails`
+  (`SettingsForm.cs:1739`): CpuFid [7:0], CpuDfsId [13:8] (mask `0x3F`),
+  CpuVid [21:14], IddValue [29:22], IddDiv [31:30]. Computed Frequency uses the
+  exact in-code expression `(CpuFid * 25 / (CpuDfsId * 12.5)) * 100` MHz
+  (`SettingsForm.cs:1817`) — done in floating point to avoid integer-division
+  error. Also: HWCR (`0xC0010015`), PStateCurLim (`0xC0010061`), PStateCtl
+  (`0xC0010062`), PStateStat (`0xC0010063`).
+  - **New, not currently computed by the tool (lower confidence — validate
+    against AMD PPR / hardware before shipping):** `PstateEn` is bit 63, i.e.
+    in the high dword `edx`, so it requires the 64-bit value, not just `eax`;
+    Voltage from CpuVid via the SVI2 plane formula `1.55 - 0.00625 * CpuVid` V
+    is a standard convention but is **not** present anywhere in the existing
+    code, so it must be confirmed before relying on it.
 - **CPUID:** leaf `0x00000001` (family/base model/ext model/stepping from
   eax); `0x80000008` if straightforward.
 - **PCI:** none required initially; structure supports adding fixed addresses
@@ -81,17 +90,18 @@ PStateDef0 (0xC0010064) — P-State 0 definition
   CpuFid   [7:0]    0xA8 (168)
   CpuDfsId [13:8]   0x08 (8)
   CpuVid   [21:14]  0x28 (40)
-  PstateEn [63]     1
-  -> Frequency: 4200 MHz
-  -> Voltage:   1.300 V
+  PstateEn [63]     1            (new field; see lower-confidence note)
+  -> Frequency: 4200 MHz         (= 200*168/8, verified against in-code math)
+  -> Voltage:   1.300 V          (= 1.55 - 0.00625*40; formula NOT yet in tool)
 ```
 
 ### Component 2 — SMU command resolver
 
 `Utils/SmuCommandNames.cs`:
 
-- A thin adapter reflects once over the live `cpu.smu.Rsmu` and `cpu.smu.Mp1`
-  mailboxes, reading their `SMU_MSG_*` properties to build a
+- A thin adapter reflects once over the live mailboxes exposed by `cpu.smu`
+  (type `SMU`): `Rsmu` (`RSMUMailbox`), `Mp1Smu` (`MP1Mailbox`), and `Hsmp`
+  (`HSMPMailbox`), reading their `SMU_MSG_*` `uint` properties to build a
   `value -> name(s)` map (the IDs differ per CPU, so they are read from the
   running machine). Zero-valued / unsupported messages are skipped; if several
   names share a value they are joined.
@@ -108,12 +118,15 @@ Consumers:
 
 In `PowerTableMonitor`:
 
-- Call `cpu.smu.GetPmTableStructure()` (returns
-  `Dictionary<uint offset, SmuSensorDefinition { Name, Type, Scale }>`), gated
-  by `cpu.smu.IsPmTableLayoutDefined`, behind `Hardware.Sync`.
+- Call `cpu.RyzenSmu.GetPmTableStructure()` (returns
+  `Dictionary<uint offset, SmuSensorDefinition { string Name; SensorType Type;
+  float Scale }>`), gated by `cpu.RyzenSmu.IsPmTableLayoutDefined`, behind
+  `Hardware.Sync`. (`cpu.RyzenSmu` is a public property of type `RyzenSmu`;
+  note `cpu.smu` is the unrelated `SMU` type and does **not** expose these.)
 - Add two columns to the grid item model: **Name** (sensor name by offset) and
-  **Scaled** (value with the sensor `Scale`/`Type` applied). Keep the existing
-  `Index`, `Offset`, `Value`, and `Max` columns unchanged as raw reference.
+  **Scaled** (value with the sensor `Scale` applied, formatted per the
+  `SensorType`). Keep the existing `Index`, `Offset`, `Value`, and `Max`
+  columns unchanged as raw reference.
 - When the layout is undefined, the new columns are blank and the view behaves
   as today.
 - The join (structure dict + `float[]` -> labeled rows) is a pure function and
@@ -162,6 +175,41 @@ register's raw line. Unknown registers print raw only.
   `(name, value)` list: resolution, collisions, zero-value skipping.
 - `PmTableLabelingTests` — labeling join from a synthetic structure dict +
   `float[]`: named/scaled output and undefined-layout fallback.
+
+## Assumption validation (checked against code + ZenStates-Core.dll)
+
+Verified before finalizing this spec:
+
+- **P-state bit fields & frequency** — confirmed against `CalculatePstateDetails`
+  (`SettingsForm.cs:1739`) and the frequency expression (`SettingsForm.cs:1817`).
+  My `200*FID/DID` shorthand is mathematically identical to the in-code
+  `(FID*25/(DID*12.5))*100`; the spec now cites the exact expression.
+- **MSR read width** — `cpu.ReadMsr(addr, ref eax, ref edx)`; 64-bit value is
+  `((ulong)edx << 32) | eax`. Confirmed (`SettingsForm.cs:2049`, `2009`).
+- **SMU command tables** — `cpu.smu` is type `SMU`, exposing `Rsmu`
+  (`RSMUMailbox`), `Mp1Smu` (`MP1Mailbox`), `Hsmp` (`HSMPMailbox`). The
+  `SMU_MSG_*` members are `uint`. Corrected: the MP1 property is `Mp1Smu`, not
+  `Mp1`.
+- **PM-table structure** — reachable via the public `cpu.RyzenSmu` property
+  (type `RyzenSmu`), method `GetPmTableStructure()` →
+  `Dictionary<uint, SmuSensorDefinition{ string Name; SensorType Type; float
+  Scale }>`, gated by `IsPmTableLayoutDefined`. Corrected: this is **not** on
+  `cpu.smu` (`RyzenSmu` and `SMU` are unrelated types, both deriving from
+  `object`).
+- **Hook points** — PCI read calls `ShowResult(data)` (`SettingsForm.cs:1376`);
+  MSR/CPUID single reads currently write only to textboxes (`2049`, `2131`);
+  MSR/PCI/CPUID scans build a per-register `StringBuilder` shown via
+  `ResultForm` (`2009`, `1916`, `2083`). All confirmed.
+- **PCI has no enumerable register set** — the tab reads arbitrary SMN/PCI
+  addresses via `cpu.ReadDword`/`ReadDwordEx` (`PCIRangeMonitor.cs:57`,
+  `SettingsForm.cs:1370`). Confirmed.
+
+Flagged as **not yet validated** (must confirm during implementation):
+
+- The CpuVid → Voltage formula (`1.55 - 0.00625*CpuVid`) is the standard SVI2
+  convention but appears nowhere in the existing tool.
+- `PstateEn` at bit 63 (high dword) is per AMD PPR but is not currently decoded
+  by the tool.
 
 ## Out of scope
 
