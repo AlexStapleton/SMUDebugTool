@@ -1,0 +1,171 @@
+# Human-readable register decoding — design
+
+Date: 2026-06-22
+
+## Problem
+
+The MSR, PCI, CPUID, SMU, and PMTable views show raw hex. Reading a value
+means manually splitting bits and remembering what each field means. The goal
+is a "knowledge layer" that, for registers the tool recognizes, shows a
+friendly register name and a labeled bit-field breakdown (including computed
+values like frequency and voltage), while falling back to raw output for
+anything unknown.
+
+## Decisions (from brainstorming)
+
+- **What "human readable" means:** decode bit-fields by name *and* label the
+  register. Not just decimal/binary reformatting.
+- **Coverage:** a curated Ryzen-focused set, compiled in (not an external
+  JSON file).
+- **Presentation:** decoded text appended inline below the existing
+  HEX/INT/BIN output in the shared results pane for single reads; scan output
+  decodes inline within the existing `ResultForm` popup.
+- **Trigger:** automatic on every read — if the address matches a known
+  register the decode is appended with no extra clicks. Unknown registers
+  behave exactly as today.
+- **SMU tab:** translate the numeric `Cmd` value into the SMU command name.
+- **PMTable:** **add** new "Name" and "Scaled" columns; **keep** the existing
+  raw `Value`/`Max` columns as reference.
+- **PCI:** there is no enumerable PCI register set — the PCI tab is a generic
+  SMN/PCI-config address reader. Decoding covers only a few well-known fixed
+  addresses (possibly none); everything else stays raw.
+
+## Architecture (approach A: declarative catalog + pure decoders)
+
+Three independent units, each hardware-free so they are unit-testable in the
+existing `ProfileCore.Tests` project and naturally respect the
+`Hardware.Sync` lock convention (they never touch hardware).
+
+### Component 1 — Core register decoder (MSR / CPUID / known PCI)
+
+New files under `Utils/`:
+
+- `RegisterDefinition.cs`
+  - `enum RegisterKind { Msr, Pci, Cpuid }`
+  - `class FieldDefinition { string Name; int HighBit; int LowBit;
+    Func<ulong,string> Format /* nullable, for computed values */ }`
+  - `class RegisterDefinition { RegisterKind Kind; uint Address /* MSR addr,
+    PCI addr, or CPUID leaf */; string Name; string Description;
+    IReadOnlyList<FieldDefinition> Fields }`
+- `RegisterCatalog.cs` — static curated set keyed by `(Kind, Address)` with
+  `bool TryGet(RegisterKind, uint, out RegisterDefinition)`.
+- `RegisterDecoder.cs` — pure logic:
+  - `string Decode(RegisterKind kind, uint address, ulong value)` returns the
+    formatted block, or `""` when the register is unknown.
+  - one shared `static ulong Extract(ulong value, int hi, int lo)`.
+  - each field's optional `Format` delegate is invoked inside a try/catch so a
+    bad computation degrades to the raw field value and never throws.
+
+Value widths:
+- **MSR** — 64-bit: `value = ((ulong)edx << 32) | eax`.
+- **PCI** — 32-bit.
+- **CPUID** — leaf-indexed; fields reference the relevant output register.
+  (The existing family/model "Decode" button stays as-is.)
+
+#### Initial curated set
+
+- **MSR:** PStateDef 0–7 (`0xC0010064`–`0xC001006B`) with CpuFid [7:0],
+  CpuDfsId [13:8], CpuVid [21:14], IddValue [29:22], IddDiv [31:30],
+  PstateEn [63], plus computed Frequency (MHz) and Voltage (V) using the same
+  math already at `SettingsForm.cs:1742`; HWCR (`0xC0010015`); PStateCurLim
+  (`0xC0010061`); PStateCtl (`0xC0010062`); PStateStat (`0xC0010063`).
+- **CPUID:** leaf `0x00000001` (family/base model/ext model/stepping from
+  eax); `0x80000008` if straightforward.
+- **PCI:** none required initially; structure supports adding fixed addresses
+  later.
+
+#### Example output (MSR `0xC0010064`)
+
+```
+PStateDef0 (0xC0010064) — P-State 0 definition
+  CpuFid   [7:0]    0xA8 (168)
+  CpuDfsId [13:8]   0x08 (8)
+  CpuVid   [21:14]  0x28 (40)
+  PstateEn [63]     1
+  -> Frequency: 4200 MHz
+  -> Voltage:   1.300 V
+```
+
+### Component 2 — SMU command resolver
+
+`Utils/SmuCommandNames.cs`:
+
+- A thin adapter reflects once over the live `cpu.smu.Rsmu` and `cpu.smu.Mp1`
+  mailboxes, reading their `SMU_MSG_*` properties to build a
+  `value -> name(s)` map (the IDs differ per CPU, so they are read from the
+  running machine). Zero-valued / unsupported messages are skipped; if several
+  names share a value they are joined.
+- The map-building logic takes a plain `IEnumerable<(string name, uint value)>`
+  so it is pure and unit-testable; reflection is isolated in a tiny wrapper.
+
+Consumers:
+- `SMUMonitor` `Cmd` column — append the resolved name, e.g.
+  `0x26 (SetPBOScalar)`.
+- The Settings-tab `ApplySettings` result — show the command name alongside the
+  numeric command.
+
+### Component 3 — PMTable labeling
+
+In `PowerTableMonitor`:
+
+- Call `cpu.smu.GetPmTableStructure()` (returns
+  `Dictionary<uint offset, SmuSensorDefinition { Name, Type, Scale }>`), gated
+  by `cpu.smu.IsPmTableLayoutDefined`, behind `Hardware.Sync`.
+- Add two columns to the grid item model: **Name** (sensor name by offset) and
+  **Scaled** (value with the sensor `Scale`/`Type` applied). Keep the existing
+  `Index`, `Offset`, `Value`, and `Max` columns unchanged as raw reference.
+- When the layout is undefined, the new columns are blank and the view behaves
+  as today.
+- The join (structure dict + `float[]` -> labeled rows) is a pure function and
+  is unit-tested; only the structure fetch touches the library.
+
+## Data flow (single read)
+
+```
+Read button
+  -> Hardware.Locked(read)         (existing)
+  -> populate textboxes            (existing)
+  -> decoder.Decode(kind, addr, value)
+  -> if non-empty: PrependResult(block)
+```
+
+Hook points:
+- MSR: `ButtonMsrRead_Click` (`SettingsForm.cs:2049`) — also starts using the
+  results pane, which today it does not.
+- PCI: inside `ShowResult(uint)` (`SettingsForm.cs:1264`).
+- CPUID: `ButtonCPUIDRead_Click` (`SettingsForm.cs:2131`) — also starts using
+  the results pane.
+
+## Data flow (scans)
+
+The MSR scan (`ReadMsr_Task`), CPUID scan (`ReadCPUID_Task`), and PCI scan
+build a `StringBuilder` shown in `ResultForm`. Each routes per-register output
+through `RegisterDecoder.Decode`, appending the decode inline under each
+register's raw line. Unknown registers print raw only.
+
+## Error handling
+
+- `RegisterDecoder.Decode` is total: unknown/invalid input returns `""`, never
+  throws.
+- Field `Format` delegates are wrapped; a failed computation falls back to the
+  raw field value.
+- `SmuCommandNames` reflection failures degrade to "no name resolved" (numeric
+  only).
+- PMTable: missing/undefined layout -> blank new columns, no crash.
+
+## Testing (`ProfileCore.Tests`, all hardware-free)
+
+- `RegisterDecoderTests` — known raw values produce exact decoded strings
+  (incl. P-state frequency/voltage math); unknown addresses yield `""`;
+  `Extract` boundary cases (bit 0, bit 63, full-width fields).
+- `SmuCommandNamesTests` — map building from a synthetic
+  `(name, value)` list: resolution, collisions, zero-value skipping.
+- `PmTableLabelingTests` — labeling join from a synthetic structure dict +
+  `float[]`: named/scaled output and undefined-layout fallback.
+
+## Out of scope
+
+- External/editable register definitions (JSON).
+- Broad/comprehensive AMD register coverage.
+- Decoding arbitrary (non-catalogued) PCI addresses.
+- Changes to write paths (MSR/PCI write behavior is unchanged).
