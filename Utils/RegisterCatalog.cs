@@ -12,6 +12,8 @@ namespace ZenStatesDebugTool
         static RegisterCatalog()
         {
             AddPStateDefs();
+            AddMiscMsrs();
+            AddCpuidLeaves();
         }
 
         public static bool TryGet(RegisterKind kind, uint address, out RegisterDefinition def)
@@ -45,6 +47,56 @@ namespace ZenStatesDebugTool
                         Voltage,
                     }));
             }
+        }
+
+        private static void AddMiscMsrs()
+        {
+            Add(new RegisterDefinition(
+                RegisterKind.Msr, 0xC0010015, "HWCR", "Hardware Configuration",
+                new List<FieldDefinition>
+                {
+                    new FieldDefinition("SmmLock", 0, 0),
+                    new FieldDefinition("TlbCacheDis", 3, 3),
+                    new FieldDefinition("Cpb (boost) Dis", 25, 25),
+                    new FieldDefinition("EffFreqReadOnlyLock", 30, 30),
+                }));
+
+            Add(new RegisterDefinition(
+                RegisterKind.Msr, 0xC0010061, "PStateCurLim", "P-State Current Limit",
+                new List<FieldDefinition>
+                {
+                    new FieldDefinition("CurPstateLimit", 2, 0),
+                    new FieldDefinition("PstateMaxVal", 6, 4),
+                }));
+
+            Add(new RegisterDefinition(
+                RegisterKind.Msr, 0xC0010062, "PStateCtl", "P-State Control",
+                new List<FieldDefinition>
+                {
+                    new FieldDefinition("PstateCmd", 2, 0),
+                }));
+
+            Add(new RegisterDefinition(
+                RegisterKind.Msr, 0xC0010063, "PStateStat", "P-State Status",
+                new List<FieldDefinition>
+                {
+                    new FieldDefinition("CurPstate", 2, 0),
+                }));
+        }
+
+        private static void AddCpuidLeaves()
+        {
+            // Decodes the EAX output of CPUID leaf 0x00000001 (family/model/stepping).
+            Add(new RegisterDefinition(
+                RegisterKind.Cpuid, 0x00000001, "CPUID_1_EAX", "Family/Model/Stepping (EAX)",
+                new List<FieldDefinition>
+                {
+                    new FieldDefinition("Stepping", 3, 0),
+                    new FieldDefinition("BaseModel", 7, 4),
+                    new FieldDefinition("BaseFamily", 11, 8),
+                    new FieldDefinition("ExtModel", 19, 16),
+                    new FieldDefinition("ExtFamily", 27, 20),
+                }));
         }
 
         private static string Frequency(ulong value, DecodeContext ctx)

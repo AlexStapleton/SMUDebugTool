@@ -67,5 +67,24 @@ namespace ProfileCore.Tests
             string s = RegisterDecoder.Decode(RegisterKind.Msr, 0xC001006B, SamplePStateDef, Svi2Ctx);
             Assert.Contains("PStateDef7 (0xC001006B)", s);
         }
+
+        [Fact]
+        public void Decode_hwcr_resolves_name_and_fields()
+        {
+            string s = RegisterDecoder.Decode(RegisterKind.Msr, 0xC0010015, 0x02000000UL);
+            Assert.Contains("HWCR (0xC0010015) - Hardware Configuration", s);
+            Assert.Contains("Cpb (boost) Dis [25] = 0x1 (1)", s);
+        }
+
+        [Fact]
+        public void Decode_cpuid_leaf1_eax_resolves_family_model()
+        {
+            // eax for a Zen part, e.g. 0x00A20F12: ExtFamily=0xA, BaseFamily=0xF, ExtModel=2, Stepping=2.
+            string s = RegisterDecoder.Decode(RegisterKind.Cpuid, 0x00000001, 0x00A20F12UL);
+            Assert.Contains("CPUID_1_EAX (0x00000001)", s);
+            Assert.Contains("Stepping [3:0] = 0x2 (2)", s);
+            Assert.Contains("BaseFamily [11:8] = 0xF (15)", s);
+            Assert.Contains("ExtFamily [27:20] = 0xA (10)", s);
+        }
     }
 }
