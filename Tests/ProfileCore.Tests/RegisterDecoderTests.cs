@@ -73,7 +73,7 @@ namespace ProfileCore.Tests
         {
             string s = RegisterDecoder.Decode(RegisterKind.Msr, 0xC0010015, 0x02000000UL);
             Assert.Contains("HWCR (0xC0010015) - Hardware Configuration", s);
-            Assert.Contains("Cpb (boost) Dis [25] = 0x1 (1)", s);
+            Assert.Contains("CpbDis [25] = 0x1 (1)", s);
         }
 
         [Fact]
@@ -84,7 +84,18 @@ namespace ProfileCore.Tests
             Assert.Contains("CPUID_1_EAX (0x00000001)", s);
             Assert.Contains("Stepping [3:0] = 0x2 (2)", s);
             Assert.Contains("BaseFamily [11:8] = 0xF (15)", s);
+            Assert.Contains("ExtModel [19:16] = 0x2 (2)", s);
             Assert.Contains("ExtFamily [27:20] = 0xA (10)", s);
+        }
+
+        [Theory]
+        [InlineData(0xC0010061u, "PStateCurLim (0xC0010061)")]
+        [InlineData(0xC0010062u, "PStateCtl (0xC0010062)")]
+        [InlineData(0xC0010063u, "PStateStat (0xC0010063)")]
+        public void Decode_pstate_status_control_msrs_resolve(uint address, string expectedHeader)
+        {
+            string s = RegisterDecoder.Decode(RegisterKind.Msr, address, 0x5UL);
+            Assert.Contains(expectedHeader, s);
         }
     }
 }

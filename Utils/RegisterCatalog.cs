@@ -57,7 +57,7 @@ namespace ZenStatesDebugTool
                 {
                     new FieldDefinition("SmmLock", 0, 0),
                     new FieldDefinition("TlbCacheDis", 3, 3),
-                    new FieldDefinition("Cpb (boost) Dis", 25, 25),
+                    new FieldDefinition("CpbDis", 25, 25),
                     new FieldDefinition("EffFreqReadOnlyLock", 30, 30),
                 }));
 
