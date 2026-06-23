@@ -1,4 +1,5 @@
 using System;
+using System.Text;
 
 namespace ZenStatesDebugTool
 {
@@ -15,6 +16,39 @@ namespace ZenStatesDebugTool
             int width = hi - lo + 1;
             ulong mask = width >= 64 ? ulong.MaxValue : (1UL << width) - 1UL;
             return (value >> lo) & mask;
+        }
+
+        // Returns a formatted, human-readable block for a recognized register,
+        // or "" when the register is unknown. Never throws.
+        public static string Decode(RegisterKind kind, uint address, ulong value, DecodeContext context = null)
+        {
+            if (!RegisterCatalog.TryGet(kind, address, out RegisterDefinition def))
+                return "";
+
+            DecodeContext ctx = context ?? DecodeContext.None;
+            var sb = new StringBuilder();
+            sb.AppendLine($"{def.Name} (0x{address:X8}) - {def.Description}");
+
+            foreach (FieldDefinition f in def.Fields)
+            {
+                ulong fieldVal;
+                try { fieldVal = Extract(value, f.HighBit, f.LowBit); }
+                catch { continue; }
+
+                string bits = f.HighBit == f.LowBit ? $"{f.HighBit}" : $"{f.HighBit}:{f.LowBit}";
+                sb.AppendLine($"  {f.Name} [{bits}] = 0x{fieldVal:X} ({fieldVal})");
+            }
+
+            foreach (var derive in def.Derived)
+            {
+                string line;
+                try { line = derive(value, ctx); }
+                catch { line = null; }
+                if (!string.IsNullOrEmpty(line))
+                    sb.AppendLine($"  -> {line}");
+            }
+
+            return sb.ToString();
         }
     }
 }

@@ -24,5 +24,11 @@ namespace ProfileCore.Tests
         {
             Assert.Throws<System.ArgumentOutOfRangeException>(() => RegisterDecoder.Extract(0xFFUL, hi, lo));
         }
+
+        [Fact]
+        public void Decode_unknown_register_returns_empty_string()
+        {
+            Assert.Equal("", RegisterDecoder.Decode(RegisterKind.Msr, 0xDEADBEEF, 0x12345678UL));
+        }
     }
 }

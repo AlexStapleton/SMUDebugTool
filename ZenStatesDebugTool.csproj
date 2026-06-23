@@ -132,6 +132,7 @@
     <Compile Include="Utils\TabVisibilityController.cs" />
     <Compile Include="Utils\RegisterDefinition.cs" />
     <Compile Include="Utils\RegisterDecoder.cs" />
+    <Compile Include="Utils\RegisterCatalog.cs" />
     <Compile Include="ResultForm.cs">
       <SubType>Form</SubType>
     </Compile>

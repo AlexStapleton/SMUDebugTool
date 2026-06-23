@@ -21,5 +21,6 @@
     <Compile Include="..\..\Utils\CoreTopology.cs" Link="CoreTopology.cs" />
     <Compile Include="..\..\Utils\RegisterDefinition.cs" Link="RegisterDefinition.cs" />
     <Compile Include="..\..\Utils\RegisterDecoder.cs" Link="RegisterDecoder.cs" />
+    <Compile Include="..\..\Utils\RegisterCatalog.cs" Link="RegisterCatalog.cs" />
   </ItemGroup>
 </Project>
