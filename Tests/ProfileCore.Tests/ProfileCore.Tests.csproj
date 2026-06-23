@@ -22,5 +22,6 @@
     <Compile Include="..\..\Utils\RegisterDefinition.cs" Link="RegisterDefinition.cs" />
     <Compile Include="..\..\Utils\RegisterDecoder.cs" Link="RegisterDecoder.cs" />
     <Compile Include="..\..\Utils\RegisterCatalog.cs" Link="RegisterCatalog.cs" />
+    <Compile Include="..\..\Utils\SmuCommandNames.cs" Link="SmuCommandNames.cs" />
   </ItemGroup>
 </Project>
