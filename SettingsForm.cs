@@ -2138,48 +2138,28 @@ namespace ZenStatesDebugTool
             }
         }
 
+        private uint _msrScanStart;
+        private uint _msrScanEnd;
+
         private void ReadMsr_Task(object sender, DoWorkEventArgs e)
         {
-            try
+            Invoke(new MethodInvoker(delegate
             {
-                Invoke(new MethodInvoker(delegate
-                {
-                    SetStatusText("Scanning MSR range, please wait...");
-                }));
+                SetStatusText("Scanning MSR range, please wait...");
+            }));
 
-                var result = new StringBuilder("MSR         EDX(63-32) EAX(31-0)" + Environment.NewLine);
+            var result = new StringBuilder("MSR         EDX(63-32) EAX(31-0)" + Environment.NewLine);
 
-                TryConvertToUint(textBoxMsrStart.Text, out uint startReg);
-                TryConvertToUint(textBoxMsrEnd.Text, out uint endReg);
-
-                lock (Hardware.Sync)
-                {
-                    while (startReg <= endReg)
-                    {
-                        uint eax = default, edx = default;
-                        if (cpu.ReadMsr(startReg, ref eax, ref edx))
-                        {
-                            result.AppendLine($"0x{startReg:X8}: 0x{edx:X8} 0x{eax:X8}");
-                            string decoded = RegisterDecoder.Decode(
-                                RegisterKind.Msr, startReg, ((ulong)edx << 32) | eax, decodeContext);
-                            if (!string.IsNullOrEmpty(decoded))
-                                result.Append(decoded);
-                        }
-
-                        startReg += 1;
-                    }
-                }
-
-                ShowResultForm("MSR Scan result", result.ToString());
-            }
-            catch (ApplicationException ex)
+            foreach (MsrReading reading in hardware.ScanMsrRange(_msrScanStart, _msrScanEnd))
             {
-                Invoke(new MethodInvoker(delegate
-                {
-                    SetButtonsState();
-                    HandleError(ex.Message);
-                }));
+                result.AppendLine($"0x{reading.Address:X8}: 0x{reading.Edx:X8} 0x{reading.Eax:X8}");
+                string decoded = RegisterDecoder.Decode(
+                    RegisterKind.Msr, reading.Address, ((ulong)reading.Edx << 32) | reading.Eax, decodeContext);
+                if (!string.IsNullOrEmpty(decoded))
+                    result.Append(decoded);
             }
+
+            ShowResultForm("MSR Scan result", result.ToString());
         }
 
         private void ButtonMsrRead_Click(object sender, EventArgs e)
@@ -2215,6 +2195,16 @@ namespace ZenStatesDebugTool
 
         private void ButtonMsrScan_Click(object sender, EventArgs e)
         {
+            try
+            {
+                TryConvertToUint(textBoxMsrStart.Text, out _msrScanStart);
+                TryConvertToUint(textBoxMsrEnd.Text, out _msrScanEnd);
+            }
+            catch (ApplicationException ex)
+            {
+                HandleError(ex.Message);
+                return;
+            }
             RunBackgroundTask(ReadMsr_Task, Scan_WorkerCompleted);
         }
 
