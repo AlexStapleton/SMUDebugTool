@@ -107,12 +107,13 @@ namespace ZenStatesDebugTool
 
             InitializeComponent();
 
-            // Surface the PM-table version and whether this build has a sensor layout
-            // for it, so an unlabeled table (unsupported version) is distinguishable
+            // Surface the PM-table version and how many rows we could label, so an
+            // unlabeled table (firmware ZenStates has no offsets for) is distinguishable
             // from a bug.
-            Text = structure != null
-                ? $"PowerTableMonitor — PM table 0x{pmTableVersion:X} (decoded)"
-                : $"PowerTableMonitor — PM table 0x{pmTableVersion:X} (no layout, raw only)";
+            int labeled = structure?.Count ?? 0;
+            Text = labeled > 0
+                ? $"PowerTableMonitor — PM table 0x{pmTableVersion:X} ({labeled} rows labeled)"
+                : $"PowerTableMonitor — PM table 0x{pmTableVersion:X} (no labels available)";
 
             dataGridView1.DataSource = list;
 

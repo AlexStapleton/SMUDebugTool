@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using ZenStatesDebugTool;
 using Xunit;
 
@@ -6,6 +7,33 @@ namespace ProfileCore.Tests
 {
     public class PmTableLabelingTests
     {
+        [Fact]
+        public void BuildNamedOffsetMap_converts_byte_offset_to_element_index_and_skips_negative()
+        {
+            var map = PmTableLabeling.BuildNamedOffsetMap(new[]
+            {
+                new KeyValuePair<string, int>("FCLK", 0x11C),       // 284 / 4 -> index 71
+                new KeyValuePair<string, int>("Cores Power", -1),   // unavailable -> skipped
+            });
+
+            Assert.Single(map);
+            Assert.True(map.ContainsKey(71));
+            Assert.Equal("FCLK", map[71].Name);
+            Assert.Equal(1.0f, map[71].Scale);
+            Assert.DoesNotContain(map.Values, v => v.Name == "Cores Power");
+        }
+
+        [Fact]
+        public void BuildNamedOffsetMap_first_label_wins_on_duplicate_index()
+        {
+            var map = PmTableLabeling.BuildNamedOffsetMap(new[]
+            {
+                new KeyValuePair<string, int>("A", 8),
+                new KeyValuePair<string, int>("B", 8),
+            });
+            Assert.Equal("A", map[2].Name);
+        }
+
         [Fact]
         public void Label_applies_name_and_scale_by_element_index()
         {
