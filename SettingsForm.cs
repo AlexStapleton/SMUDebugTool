@@ -312,6 +312,17 @@ namespace ZenStatesDebugTool
                 Math.Max(numericUpDownFmax.Minimum, Math.Min(numericUpDownFmax.Maximum, fmax));
         }
 
+        // Writes a read-back FMax into the box only when it's usable. GetFMax() ignores the
+        // SMU status and returns 0 on CPUs without a working read-back, so writing it blindly
+        // would wipe the user's entry (e.g. when applying/refreshing CO, which also rereads
+        // FMax). The clamp keeps an out-of-range read from throwing on the control.
+        private void SetFmaxFromReadback(uint hwFmax)
+        {
+            if (hwFmax == 0) return;
+            numericUpDownFmax.Value =
+                Math.Max(numericUpDownFmax.Minimum, Math.Min(numericUpDownFmax.Maximum, hwFmax));
+        }
+
         private void ApplyBclk(double? bclk)
         {
             labelBCLK.Text = bclk + " MHz";
@@ -466,7 +477,7 @@ namespace ZenStatesDebugTool
         {
             RefreshCoMarginsFromHardware();
             InitStartupProfileUi();
-            numericUpDownFmax.Value = Hardware.Locked(() => cpu.GetFMax());
+            SetFmaxFromReadback(Hardware.Locked(() => cpu.GetFMax()));
         }
 
         // Per-core CO margin read + apply, on the UI thread (button path).
@@ -2948,7 +2959,9 @@ namespace ZenStatesDebugTool
             uint targetFmax = (uint)numericUpDownFmax.Value;
             uint? newFmax = Hardware.Locked(() => cpu.SetFMax(targetFmax) ? (uint?)cpu.GetFMax() : null);
             if (newFmax.HasValue) {
-                numericUpDownFmax.Value = newFmax.Value;
+                // Only reflect the read-back when it's usable; otherwise keep the applied
+                // value instead of wiping it to 0 on CPUs without a working FMax read-back.
+                SetFmaxFromReadback(newFmax.Value);
             }
         }
 
