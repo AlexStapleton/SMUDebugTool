@@ -136,6 +136,7 @@
     <Compile Include="Utils\SmuCommandNames.cs" />
     <Compile Include="Utils\PmTableLabeling.cs" />
     <Compile Include="Utils\SmuDecodeAdapter.cs" />
+    <Compile Include="Utils\HardwareService.cs" />
     <Compile Include="ResultForm.cs">
       <SubType>Form</SubType>
     </Compile>
