@@ -29,6 +29,7 @@ namespace ZenStatesDebugTool
         private BackgroundWorker backgroundWorker1;
         private readonly NUMAUtil _numaUtil;
         private readonly Cpu cpu;
+        private readonly HardwareService hardware;
         private DecodeContext decodeContext = DecodeContext.None;
         private IReadOnlyDictionary<uint, string> smuNameMap;
         List<SmuAddressSet> matches = new List<SmuAddressSet>();
@@ -68,6 +69,7 @@ namespace ZenStatesDebugTool
                 profileManager.MigrateLegacyIfNeeded();
 
                 cpu = new Cpu();
+                hardware = new HardwareService(cpu);
 
                 InitForm();
             }
@@ -2183,16 +2185,13 @@ namespace ZenStatesDebugTool
         private void ButtonMsrRead_Click(object sender, EventArgs e)
         {
             TryConvertToUint(textBoxMsrAddress.Text, out uint msr);
-            uint eax = default, edx = default;
-            uint rEax = 0, rEdx = 0;
-            bool ok = Hardware.Locked(() => cpu.ReadMsr(msr, ref rEax, ref rEdx));
-            eax = rEax; edx = rEdx;
-            if (ok)
+            MsrReadResult r = hardware.ReadMsr(msr);
+            if (r.Ok)
             {
-                textBoxMsrEdx.Text = $"0x{edx:X8}";
-                textBoxMsrEax.Text = $"0x{eax:X8}";
+                textBoxMsrEdx.Text = $"0x{r.Edx:X8}";
+                textBoxMsrEax.Text = $"0x{r.Eax:X8}";
 
-                ulong value = ((ulong)edx << 32) | eax;
+                ulong value = ((ulong)r.Edx << 32) | r.Eax;
                 string decoded = RegisterDecoder.Decode(RegisterKind.Msr, msr, value, decodeContext);
                 if (!string.IsNullOrEmpty(decoded))
                     PrependResult(decoded + Environment.NewLine);
@@ -2205,7 +2204,7 @@ namespace ZenStatesDebugTool
             TryConvertToUint(textBoxMsrEax.Text, out uint eax);
             TryConvertToUint(textBoxMsrAddress.Text, out uint msr);
 
-            if (!Hardware.Locked(() => cpu.WriteMsr(msr, eax, edx)))
+            if (!hardware.WriteMsr(msr, eax, edx))
             {
                 HandleError($@"Error writing MSR {textBoxMsrAddress.Text}!");
                 return;
