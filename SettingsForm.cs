@@ -402,10 +402,44 @@ namespace ZenStatesDebugTool
         });
         private static readonly string[] CsTierNames = { "min", "low", "medium", "high", "max" };
 
+        // Curve Shaper margins applied in this session, packed like GetAllCurveShaperMargins
+        // (low/med/high in bits 8/16/24 per tier). GetAllCurveShaperMargins returns all
+        // zeros on CPUs that don't report Curve Shaper back, so Refresh falls back to these
+        // instead of wiping the grid to 0.
+        private uint[] _lastAppliedCurveShaper;
+
         // Synchronous read+apply, used by the Refresh button (UI thread).
         private void InitCS(bool showStatus = false)
         {
-            ApplyCurveShaperValues(Hardware.Locked(() => cpu.GetAllCurveShaperMargins()), showStatus);
+            uint[] hw = Hardware.Locked(() => cpu.GetAllCurveShaperMargins());
+
+            // No working read-back on this CPU (all zeros): show what we last applied this
+            // session rather than blanking the values the user actually set.
+            if (IsAllZero(hw) && _lastAppliedCurveShaper != null)
+            {
+                ApplyCurveShaperValues(_lastAppliedCurveShaper, showStatus: false);
+                if (showStatus)
+                    SetStatusText("Curve Shaper margins refreshed (showing last applied; this CPU does not report them back).");
+                return;
+            }
+
+            ApplyCurveShaperValues(hw, showStatus);
+        }
+
+        private static bool IsAllZero(uint[] values)
+        {
+            if (values == null) return true;
+            foreach (uint v in values)
+                if (v != 0) return false;
+            return true;
+        }
+
+        // Packs one tier's low/med/high margins into the GetAllCurveShaperMargins layout.
+        private static uint PackCurveShaperTier(int low, int med, int high)
+        {
+            return ((uint)(byte)(sbyte)low << 8)
+                 | ((uint)(byte)(sbyte)med << 16)
+                 | ((uint)(byte)(sbyte)high << 24);
         }
 
         // Apply-only half (UI thread); the read is done by the caller so the startup path
@@ -720,6 +754,36 @@ namespace ZenStatesDebugTool
             finally
             {
                 comboBoxProfiles.SelectedIndexChanged += ComboBoxProfiles_SelectedIndexChanged;
+            }
+
+            // Keep the startup-profile dropdown in sync so a newly created (or deleted)
+            // profile shows up without restarting the app.
+            RefreshStartupProfileList();
+        }
+
+        // Repopulates the startup-profile dropdown from the current profile set, preserving
+        // the current selection. The suppress flag keeps the SelectedIndexChanged handler
+        // from touching the scheduled task during repopulation, so this only refreshes the
+        // list - it does not re-register or change the startup task.
+        private void RefreshStartupProfileList()
+        {
+            if (comboBoxStartupProfile == null) return;
+            _suppressStartupTaskUpdates = true;
+            try
+            {
+                string previous = comboBoxStartupProfile.SelectedItem as string;
+                comboBoxStartupProfile.Items.Clear();
+                foreach (var n in profileManager.List())
+                    comboBoxStartupProfile.Items.Add(n);
+
+                if (previous != null && comboBoxStartupProfile.Items.Contains(previous))
+                    comboBoxStartupProfile.SelectedItem = previous;
+                else if (comboBoxStartupProfile.Items.Count > 0)
+                    comboBoxStartupProfile.SelectedIndex = 0;
+            }
+            finally
+            {
+                _suppressStartupTaskUpdates = false;
             }
         }
 
@@ -2988,6 +3052,15 @@ namespace ZenStatesDebugTool
 
             if (errorMessages.Count == 0)
             {
+                // Remember what we applied so Refresh can show it on CPUs that don't report
+                // Curve Shaper margins back (GetAllCurveShaperMargins returns 0 there).
+                _lastAppliedCurveShaper = new uint[5];
+                for (int tier = 0; tier < 5; tier++)
+                    _lastAppliedCurveShaper[tier] = PackCurveShaperTier(
+                        (int)CsGrid[tier][0].Value,
+                        (int)CsGrid[tier][1].Value,
+                        (int)CsGrid[tier][2].Value);
+
                 SetStatusText("Curve Shaper margins applied successfully.");
             }
             else
