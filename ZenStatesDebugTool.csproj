@@ -137,6 +137,7 @@
     <Compile Include="Utils\PmTableLabeling.cs" />
     <Compile Include="Utils\SmuDecodeAdapter.cs" />
     <Compile Include="Utils\PStateMath.cs" />
+    <Compile Include="Utils\CurveShaperCodec.cs" />
     <Compile Include="ResultForm.cs">
       <SubType>Form</SubType>
     </Compile>
