@@ -394,11 +394,6 @@ namespace ZenStatesDebugTool
             checkBoxSMT.Checked = cpu.systemInfo.SMT;
         }
 
-        private static int ConvertMarginToInt(uint value)
-        {
-            return (sbyte)(unchecked(value));
-        }
-
         // The 5 Curve Shaper tiers (min, low, med, high, max), each [0]=low [1]=med [2]=high
         // designer control. Built once so the read/apply/save/load paths can loop over the
         // grid instead of repeating 15 hand-written lines (which were easy to get out of sync).
@@ -426,7 +421,7 @@ namespace ZenStatesDebugTool
 
             // No working read-back on this CPU (all zeros): show what we last applied this
             // session rather than blanking the values the user actually set.
-            if (IsAllZero(hw) && _lastAppliedCurveShaper != null)
+            if (CurveShaperCodec.IsAllZero(hw) && _lastAppliedCurveShaper != null)
             {
                 ApplyCurveShaperValues(_lastAppliedCurveShaper, showStatus: false);
                 if (showStatus)
@@ -435,22 +430,6 @@ namespace ZenStatesDebugTool
             }
 
             ApplyCurveShaperValues(hw, showStatus);
-        }
-
-        private static bool IsAllZero(uint[] values)
-        {
-            if (values == null) return true;
-            foreach (uint v in values)
-                if (v != 0) return false;
-            return true;
-        }
-
-        // Packs one tier's low/med/high margins into the GetAllCurveShaperMargins layout.
-        private static uint PackCurveShaperTier(int low, int med, int high)
-        {
-            return ((uint)(byte)(sbyte)low << 8)
-                 | ((uint)(byte)(sbyte)med << 16)
-                 | ((uint)(byte)(sbyte)high << 24);
         }
 
         // Apply-only half (UI thread); the read is done by the caller so the startup path
@@ -463,9 +442,10 @@ namespace ZenStatesDebugTool
 
             for (int tier = 0; tier < 5; tier++)
             {
-                CsGrid[tier][0].Value = ConvertMarginToInt(csValues[tier] >> 8 & 0xFF);
-                CsGrid[tier][1].Value = ConvertMarginToInt(csValues[tier] >> 16 & 0xFF);
-                CsGrid[tier][2].Value = ConvertMarginToInt(csValues[tier] >> 24 & 0xFF);
+                CurveShaperCodec.Unpack(csValues[tier], out int low, out int med, out int high);
+                CsGrid[tier][0].Value = low;
+                CsGrid[tier][1].Value = med;
+                CsGrid[tier][2].Value = high;
             }
 
             if (showStatus)
@@ -3049,7 +3029,7 @@ namespace ZenStatesDebugTool
                 // Curve Shaper margins back (GetAllCurveShaperMargins returns 0 there).
                 _lastAppliedCurveShaper = new uint[5];
                 for (int tier = 0; tier < 5; tier++)
-                    _lastAppliedCurveShaper[tier] = PackCurveShaperTier(
+                    _lastAppliedCurveShaper[tier] = CurveShaperCodec.Pack(
                         (int)CsGrid[tier][0].Value,
                         (int)CsGrid[tier][1].Value,
                         (int)CsGrid[tier][2].Value);
