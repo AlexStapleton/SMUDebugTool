@@ -758,18 +758,26 @@ namespace ZenStatesDebugTool
 
         private void ButtonApplyProfile_Click(object sender, EventArgs e)
         {
-            var name = CurrentProfileName;
-            if (string.IsNullOrEmpty(name)) { HandleError("Select or type a profile name to apply."); return; }
             try
             {
-                var profile = profileManager.Load(name);
-                if (profile == null) { HandleError($"Profile '{name}' not found."); return; }
+                // Apply exactly what's on screen, not the last-saved file, so edits to
+                // PPT/TDC/EDC/CO/etc. take effect without needing a Save first. Selecting a
+                // profile in the dropdown loads it into these fields (LoadProfileIntoForm),
+                // so saved profiles still apply via the same path.
+                var name = CurrentProfileName;
+                var profile = GatherProfileFromUi(name);
+
                 // One lock covers every hardware write the applier performs (it does no UI
                 // Invoke), serializing it against monitors and other readers.
                 var result = Hardware.Locked(() => profileApplier.Apply(profile, cpu));
-                SetStatusText(result.Success
-                    ? $"Profile '{name}' applied."
-                    : "Apply finished with errors: " + string.Join("; ", result.Messages));
+
+                string label = string.IsNullOrEmpty(name) ? "Current settings" : $"Profile '{name}'";
+                SetStatusText(result.Success ? $"{label} applied." : $"{label} applied with errors.");
+
+                // Per-limit / per-step outcomes so an accepted-but-ineffective limit is
+                // visible (a Set returning OK that the board's PBO/AGESA later overrides).
+                if (result.Messages.Count > 0)
+                    PrependResult(string.Join(Environment.NewLine, result.Messages) + Environment.NewLine);
             }
             catch (Exception ex)
             {

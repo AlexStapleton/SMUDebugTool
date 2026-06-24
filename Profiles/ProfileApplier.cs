@@ -62,18 +62,26 @@ namespace ZenStatesDebugTool.Profiles
             // TDC/EDC target the VDD (core) rail, matching desktop PBO (Ryzen Master).
             // A value of 0 means "leave unchanged", so a CO-only profile does not
             // accidentally clamp the power/current limits to zero.
-            if (p.PptWatts.HasValue && p.PptWatts.Value > 0
-                && cpu.SetPPTLimit((uint)p.PptWatts.Value) != SMU.Status.OK)
-                r.Fail("Failed to set PPT limit.");
-            if (p.TdcAmps.HasValue && p.TdcAmps.Value > 0
-                && cpu.SetTDCVDDLimit((uint)p.TdcAmps.Value) != SMU.Status.OK)
-                r.Fail("Failed to set TDC limit.");
-            if (p.EdcAmps.HasValue && p.EdcAmps.Value > 0
-                && cpu.SetEDCVDDLimit((uint)p.EdcAmps.Value) != SMU.Status.OK)
-                r.Fail("Failed to set EDC limit.");
-            if (p.PboScalar.HasValue && p.PboScalar.Value > 0
-                && cpu.SetPBOScalar((uint)p.PboScalar.Value) != SMU.Status.OK)
-                r.Fail("Failed to set PBO scalar.");
+            if (p.PptWatts.HasValue && p.PptWatts.Value > 0)
+                Report(r, $"PPT {p.PptWatts.Value} W", cpu.SetPPTLimit((uint)p.PptWatts.Value));
+            if (p.TdcAmps.HasValue && p.TdcAmps.Value > 0)
+                Report(r, $"TDC {p.TdcAmps.Value} A", cpu.SetTDCVDDLimit((uint)p.TdcAmps.Value));
+            if (p.EdcAmps.HasValue && p.EdcAmps.Value > 0)
+                Report(r, $"EDC {p.EdcAmps.Value} A", cpu.SetEDCVDDLimit((uint)p.EdcAmps.Value));
+            if (p.PboScalar.HasValue && p.PboScalar.Value > 0)
+                Report(r, $"PBO Scalar {p.PboScalar.Value}x", cpu.SetPBOScalar((uint)p.PboScalar.Value));
+        }
+
+        // Records the per-limit outcome: an Info line on OK so the user can see the value
+        // was accepted, a Fail line (with the SMU status) otherwise. "Accepted" here means
+        // the SMU took the command - the board's PBO/AGESA may still re-assert its own
+        // limits afterwards, which shows up as no behaviour change despite an OK here.
+        private static void Report(ApplyResult r, string what, SMU.Status status)
+        {
+            if (status == SMU.Status.OK)
+                r.Info($"{what}: set OK");
+            else
+                r.Fail($"{what}: failed ({status})");
         }
 
         // Delegates to the shared CoreTopology helper so the UI and headless apply paths
