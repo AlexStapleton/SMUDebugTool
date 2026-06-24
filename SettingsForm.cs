@@ -1842,15 +1842,6 @@ namespace ZenStatesDebugTool
             MessageBox.Show($"Report saved as {fileName}");
         }
 
-        public static void CalculatePstateDetails(uint eax, ref uint IddDiv, ref uint IddVal, ref uint CpuVid, ref uint CpuDfsId, ref uint CpuFid)
-        {
-            IddDiv = eax >> 30;
-            IddVal = eax >> 22 & 0xFF;
-            CpuVid = eax >> 14 & 0xFF;
-            CpuDfsId = eax >> 8 & 0x3F;
-            CpuFid = eax & 0xFF;
-        }
-
         private void ButtonExport_Click(object sender, EventArgs e)
         {
             RunBackgroundTask(BackgroundWorkerTrySettings_DoWork, BackgroundWorkerReport_RunWorkerCompleted);
@@ -1894,7 +1885,7 @@ namespace ZenStatesDebugTool
             int fid = int.TryParse(pstateFid.Text, out int f) ? f : 0;
             int did = int.TryParse(pstateDid.Text, out int d) ? d : 1;
             if (did == 0) did = 1; // avoid divide-by-zero
-            pstateFrequency.Text = (fid * 25 / (did * 12.5)) * 100 + "MHz";
+            pstateFrequency.Text = PStateMath.FrequencyMhz((uint)fid, (uint)did) + "MHz";
         }
 
         private void BtnPstateRead_Click(object sender, EventArgs e)
@@ -1910,17 +1901,11 @@ namespace ZenStatesDebugTool
                 return;
             }
 
-            uint IddDiv = 0x0;
-            uint IddVal = 0x0;
-            uint CpuVid = 0x0;
-            uint CpuDfsId = 0x0;
-            uint CpuFid = 0x0;
+            PStateValues pv = PStateMath.Decode(eax);
 
-            CalculatePstateDetails(eax, ref IddDiv, ref IddVal, ref CpuVid, ref CpuDfsId, ref CpuFid);
-
-            pstateDid.Text = Convert.ToString(CpuDfsId, 10);
-            pstateFid.Text = Convert.ToString(CpuFid, 10);
-            pstateFrequency.Text = (CpuFid * 25 / (CpuDfsId * 12.5)) * 100 + "MHz";
+            pstateDid.Text = Convert.ToString(pv.CpuDfsId, 10);
+            pstateFid.Text = Convert.ToString(pv.CpuFid, 10);
+            pstateFrequency.Text = PStateMath.FrequencyMhz(pv.CpuFid, pv.CpuDfsId) + "MHz";
 
             SetStatusText($@"PState {pstateId} successfully read.");
 
@@ -1951,11 +1936,6 @@ namespace ZenStatesDebugTool
 
             var pstateId = pstateIdBox.SelectedIndex;
             uint eax = default, edx = default;
-            uint IddDiv = 0x0;
-            uint IddVal = 0x0;
-            uint CpuVid = 0x0;
-            uint CpuDfsId = 0x0;
-            uint CpuFid = 0x0;
 
             uint readEax = 0, readEdx = 0;
             bool pstateReadOk = Hardware.Locked(() => cpu.ReadMsr(Convert.ToUInt32(Convert.ToInt64(0xC0010064) + pstateId), ref readEax, ref readEdx));
@@ -1966,9 +1946,9 @@ namespace ZenStatesDebugTool
                 return;
             }
 
-            CalculatePstateDetails(eax, ref IddDiv, ref IddVal, ref CpuVid, ref CpuDfsId, ref CpuFid);
-
-            eax = (IddDiv & 0xFF) << 30 | (IddVal & 0xFF) << 22 | (CpuVid & 0xFF) << 14 | (uint.Parse(pstateDid.Text) & 0xFF) << 8 | uint.Parse(pstateFid.Text) & 0xFF;
+            PStateValues pv = PStateMath.Decode(eax);
+            eax = PStateMath.Encode(pv.IddDiv, pv.IddVal, pv.CpuVid,
+                uint.Parse(pstateDid.Text), uint.Parse(pstateFid.Text));
 
             if (_numaUtil.HighestNumaNode > 0)
             {
