@@ -2017,19 +2017,40 @@ namespace ZenStatesDebugTool
         {
             if (checkBoxPROCHOT.Checked)
             {
+                // Enabling PROCHOT = normal operation. Exiting OC mode restores PBO /
+                // auto-boost and re-asserts PROCHOT; we must NOT enter OC mode here
+                // (doing so would pin all cores to the SMU's default OC frequency).
                 DisableOCMode();
             }
-            EnableOCMode(checkBoxPROCHOT.Checked);
+            else
+            {
+                // Disabling PROCHOT requires manual OC mode on Ryzen, which pins the
+                // all-core clock and disables PBO / auto-boost until PROCHOT is
+                // re-enabled. Make the trade-off explicit before applying it.
+                DialogResult choice = MessageBox.Show(
+                    "Disabling PROCHOT requires the CPU to enter manual OC mode.\n\n" +
+                    "While PROCHOT is disabled, all cores are pinned to a fixed frequency " +
+                    "and PBO / auto-boost are turned off. Re-enable PROCHOT to restore " +
+                    "normal operation.\n\nContinue?",
+                    "Disable PROCHOT?",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning);
+
+                if (choice != DialogResult.Yes)
+                {
+                    // User backed out: restore the checkbox to the enabled state.
+                    checkBoxPROCHOT.Checked = true;
+                    return;
+                }
+
+                EnableOCMode(false);
+            }
+
             if (!checkBoxPROCHOT.Checked && Hardware.Locked(() => cpu.IsProchotEnabled()) == true)
             {
                 checkBoxPROCHOT.Checked = true;
                 HandleError($@"Error, PROCHOT could not be disabled!");
             }
-            /*else
-            {
-                checkBoxPROCHOT.Enabled = false;
-                buttonApplyPROCHOT.Enabled = false;
-            }*/
         }
 
         private void ReadMsr_Task(object sender, DoWorkEventArgs e)
