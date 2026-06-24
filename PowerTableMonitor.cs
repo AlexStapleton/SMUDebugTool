@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Windows.Forms;
 using System.Globalization;
@@ -14,12 +15,15 @@ namespace ZenStatesDebugTool
         // Running per-row maximum kept as float, so the refresh never has to parse the
         // formatted Max string back into a number. Index-aligned with `list`.
         private float[] maxes;
+        private IReadOnlyDictionary<uint, SensorInfo> structure;
         private class PowerMonitorItem
         {
             public string Index { get; set; }
             public string Offset { get; set; }
             public string Value { get; set; }
             public string Max { get; set; }
+            public string Name { get; set; }
+            public string Scaled { get; set; }
         }
 
         private void FillInData(float[] table)
@@ -31,12 +35,23 @@ namespace ZenStatesDebugTool
             {
                 var valueStr = table[i].ToString("F6", CultureInfo.InvariantCulture);
                 maxes[i] = table[i];
+                // The structure is keyed by float-array element index, not byte offset.
+                string name = "";
+                string scaled = "";
+                if (structure != null && structure.TryGetValue((uint)i, out SensorInfo info))
+                {
+                    name = info.Name ?? "";
+                    scaled = PmTableLabeling.FormatScaled(table[i], info);
+                }
+
                 list.Add(new PowerMonitorItem
                 {
                     Index = $"{i:D4}",
                     Offset = $"0x{(i * 4):X4}",
                     Value = valueStr,
-                    Max = valueStr
+                    Max = valueStr,
+                    Name = name,
+                    Scaled = scaled,
                 });
             }
         }
@@ -50,6 +65,9 @@ namespace ZenStatesDebugTool
 
                 // Current value is (re)formatted each tick; one float format is cheap.
                 item.Value = current.ToString("F6", CultureInfo.InvariantCulture);
+
+                if (structure != null && structure.TryGetValue((uint)index, out SensorInfo info))
+                    item.Scaled = PmTableLabeling.FormatScaled(current, info);
 
                 // Compare against the float max and only reformat the Max string when it grows.
                 if (current > maxes[index])
@@ -76,13 +94,26 @@ namespace ZenStatesDebugTool
         public PowerTableMonitor(Cpu cpu)
         {
             CPU = cpu;
+            uint pmTableVersion;
             lock (Hardware.Sync)
+            {
+                structure = SmuDecodeAdapter.GetPmTableStructure(cpu);
+                pmTableVersion = cpu.RyzenSmu.PmTableVersion;
                 cpu.RefreshPowerTable();
+            }
 
             PowerCfgTimer.Interval = 2000;
             PowerCfgTimer.Tick += new EventHandler(PowerCfgTimer_Tick);
 
             InitializeComponent();
+
+            // Surface the PM-table version and how many rows we could label, so an
+            // unlabeled table (firmware ZenStates has no offsets for) is distinguishable
+            // from a bug.
+            int labeled = structure?.Count ?? 0;
+            Text = labeled > 0
+                ? $"PowerTableMonitor — PM table 0x{pmTableVersion:X} ({labeled} rows labeled)"
+                : $"PowerTableMonitor — PM table 0x{pmTableVersion:X} (no labels available)";
 
             dataGridView1.DataSource = list;
 

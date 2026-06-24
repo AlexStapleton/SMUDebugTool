@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Threading;
 using System.Windows.Forms;
@@ -9,6 +10,7 @@ namespace ZenStatesDebugTool
     public partial class SMUMonitor : Form
     {
         private readonly Cpu CPU;
+        private readonly IReadOnlyDictionary<uint, string> nameMap;
         // Poll on a background thread instead of a WinForms timer: the SMU reads no longer
         // run on the dialog's message-loop thread, so the grid/buttons stay responsive even
         // if a ReadDword stalls. Only the row append is marshalled back to the UI thread.
@@ -35,6 +37,10 @@ namespace ZenStatesDebugTool
         public SMUMonitor(Cpu cpu, uint addrMsg, uint addrArg, uint addrRsp)
         {
             CPU = cpu;
+            // Reflects over the in-memory SMU_MSG_* tables; serialized under the
+            // shared lock for consistency with the rest of the SMU access path.
+            lock (Hardware.Sync)
+                nameMap = SmuCommandNames.Build(SmuDecodeAdapter.ReadMessages(cpu.smu));
             SMU_ADDR_MSG = addrMsg;
             SMU_ADDR_ARG = addrArg;
             SMU_ADDR_RSP = addrRsp;
@@ -112,12 +118,18 @@ namespace ZenStatesDebugTool
 
             var item = new SmuMonitorItem
             {
-                Cmd = $"0x{msg:X2}",
+                Cmd = ResolveCmd(msg),
                 Arg = $"0x{arg:X8}",
                 Rsp = $"0x{rsp:X2} {GetSMUStatus.GetByType((SMU.Status)rsp)}"
             };
 
             AppendRow(item);
+        }
+
+        private string ResolveCmd(uint msg)
+        {
+            string name = SmuCommandNames.Resolve(nameMap, msg);
+            return name != null ? $"0x{msg:X2} ({name})" : $"0x{msg:X2}";
         }
 
         // Marshals the row append onto the UI thread, tolerating a closing form.
