@@ -721,6 +721,36 @@ namespace ZenStatesDebugTool
             {
                 comboBoxProfiles.SelectedIndexChanged += ComboBoxProfiles_SelectedIndexChanged;
             }
+
+            // Keep the startup-profile dropdown in sync so a newly created (or deleted)
+            // profile shows up without restarting the app.
+            RefreshStartupProfileList();
+        }
+
+        // Repopulates the startup-profile dropdown from the current profile set, preserving
+        // the current selection. The suppress flag keeps the SelectedIndexChanged handler
+        // from touching the scheduled task during repopulation, so this only refreshes the
+        // list - it does not re-register or change the startup task.
+        private void RefreshStartupProfileList()
+        {
+            if (comboBoxStartupProfile == null) return;
+            _suppressStartupTaskUpdates = true;
+            try
+            {
+                string previous = comboBoxStartupProfile.SelectedItem as string;
+                comboBoxStartupProfile.Items.Clear();
+                foreach (var n in profileManager.List())
+                    comboBoxStartupProfile.Items.Add(n);
+
+                if (previous != null && comboBoxStartupProfile.Items.Contains(previous))
+                    comboBoxStartupProfile.SelectedItem = previous;
+                else if (comboBoxStartupProfile.Items.Count > 0)
+                    comboBoxStartupProfile.SelectedIndex = 0;
+            }
+            finally
+            {
+                _suppressStartupTaskUpdates = false;
+            }
         }
 
         // The profile name typed into, or selected from, the combo box.
