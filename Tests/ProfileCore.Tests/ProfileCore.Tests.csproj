@@ -24,5 +24,7 @@
     <Compile Include="..\..\Utils\RegisterCatalog.cs" Link="RegisterCatalog.cs" />
     <Compile Include="..\..\Utils\SmuCommandNames.cs" Link="SmuCommandNames.cs" />
     <Compile Include="..\..\Utils\PmTableLabeling.cs" Link="PmTableLabeling.cs" />
+    <Compile Include="..\..\Utils\PStateMath.cs" Link="PStateMath.cs" />
+    <Compile Include="..\..\Utils\CurveShaperCodec.cs" Link="CurveShaperCodec.cs" />
   </ItemGroup>
 </Project>
