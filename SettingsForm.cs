@@ -29,6 +29,7 @@ namespace ZenStatesDebugTool
         private BackgroundWorker backgroundWorker1;
         private readonly NUMAUtil _numaUtil;
         private readonly Cpu cpu;
+        private readonly HardwareService hardware;
         private DecodeContext decodeContext = DecodeContext.None;
         private IReadOnlyDictionary<uint, string> smuNameMap;
         List<SmuAddressSet> matches = new List<SmuAddressSet>();
@@ -68,6 +69,7 @@ namespace ZenStatesDebugTool
                 profileManager.MigrateLegacyIfNeeded();
 
                 cpu = new Cpu();
+                hardware = new HardwareService(cpu);
 
                 InitForm();
             }
@@ -2096,63 +2098,40 @@ namespace ZenStatesDebugTool
             }
         }
 
+        private uint _msrScanStart;
+        private uint _msrScanEnd;
+
         private void ReadMsr_Task(object sender, DoWorkEventArgs e)
         {
-            try
+            Invoke(new MethodInvoker(delegate
             {
-                Invoke(new MethodInvoker(delegate
-                {
-                    SetStatusText("Scanning MSR range, please wait...");
-                }));
+                SetStatusText("Scanning MSR range, please wait...");
+            }));
 
-                var result = new StringBuilder("MSR         EDX(63-32) EAX(31-0)" + Environment.NewLine);
+            var result = new StringBuilder("MSR         EDX(63-32) EAX(31-0)" + Environment.NewLine);
 
-                TryConvertToUint(textBoxMsrStart.Text, out uint startReg);
-                TryConvertToUint(textBoxMsrEnd.Text, out uint endReg);
-
-                lock (Hardware.Sync)
-                {
-                    while (startReg <= endReg)
-                    {
-                        uint eax = default, edx = default;
-                        if (cpu.ReadMsr(startReg, ref eax, ref edx))
-                        {
-                            result.AppendLine($"0x{startReg:X8}: 0x{edx:X8} 0x{eax:X8}");
-                            string decoded = RegisterDecoder.Decode(
-                                RegisterKind.Msr, startReg, ((ulong)edx << 32) | eax, decodeContext);
-                            if (!string.IsNullOrEmpty(decoded))
-                                result.Append(decoded);
-                        }
-
-                        startReg += 1;
-                    }
-                }
-
-                ShowResultForm("MSR Scan result", result.ToString());
-            }
-            catch (ApplicationException ex)
+            foreach (MsrReading reading in hardware.ScanMsrRange(_msrScanStart, _msrScanEnd))
             {
-                Invoke(new MethodInvoker(delegate
-                {
-                    SetButtonsState();
-                    HandleError(ex.Message);
-                }));
+                result.AppendLine($"0x{reading.Address:X8}: 0x{reading.Edx:X8} 0x{reading.Eax:X8}");
+                string decoded = RegisterDecoder.Decode(
+                    RegisterKind.Msr, reading.Address, ((ulong)reading.Edx << 32) | reading.Eax, decodeContext);
+                if (!string.IsNullOrEmpty(decoded))
+                    result.Append(decoded);
             }
+
+            ShowResultForm("MSR Scan result", result.ToString());
         }
 
         private void ButtonMsrRead_Click(object sender, EventArgs e)
         {
             TryConvertToUint(textBoxMsrAddress.Text, out uint msr);
-            uint eax = default, edx = default;
-            uint rEax = 0, rEdx = 0;
-            bool ok = Hardware.Locked(() => cpu.ReadMsr(msr, ref rEax, ref rEdx));
-            eax = rEax; edx = rEdx;
-            if (ok)
+            MsrReadResult r = hardware.ReadMsr(msr);
+            if (r.Ok)
             {
-                textBoxMsrEdx.Text = $"0x{edx:X8}";
-                textBoxMsrEax.Text = $"0x{eax:X8}";
+                textBoxMsrEdx.Text = $"0x{r.Edx:X8}";
+                textBoxMsrEax.Text = $"0x{r.Eax:X8}";
 
-                ulong value = ((ulong)edx << 32) | eax;
+                ulong value = ((ulong)r.Edx << 32) | r.Eax;
                 string decoded = RegisterDecoder.Decode(RegisterKind.Msr, msr, value, decodeContext);
                 if (!string.IsNullOrEmpty(decoded))
                     PrependResult(decoded + Environment.NewLine);
@@ -2165,7 +2144,7 @@ namespace ZenStatesDebugTool
             TryConvertToUint(textBoxMsrEax.Text, out uint eax);
             TryConvertToUint(textBoxMsrAddress.Text, out uint msr);
 
-            if (!Hardware.Locked(() => cpu.WriteMsr(msr, eax, edx)))
+            if (!hardware.WriteMsr(msr, eax, edx))
             {
                 HandleError($@"Error writing MSR {textBoxMsrAddress.Text}!");
                 return;
@@ -2176,6 +2155,16 @@ namespace ZenStatesDebugTool
 
         private void ButtonMsrScan_Click(object sender, EventArgs e)
         {
+            try
+            {
+                TryConvertToUint(textBoxMsrStart.Text, out _msrScanStart);
+                TryConvertToUint(textBoxMsrEnd.Text, out _msrScanEnd);
+            }
+            catch (ApplicationException ex)
+            {
+                HandleError(ex.Message);
+                return;
+            }
             RunBackgroundTask(ReadMsr_Task, Scan_WorkerCompleted);
         }
 
