@@ -72,6 +72,7 @@ namespace ZenStatesDebugTool
                 hardware = new HardwareService(cpu);
 
                 InitForm();
+                ShowLastStartupApplyResult();
             }
             catch (Exception ex)
             {
@@ -2759,15 +2760,68 @@ namespace ZenStatesDebugTool
         private void CheckBoxApplyCOStartup_CheckedChanged(object sender, EventArgs e)
         {
             if (_suppressStartupTaskUpdates) return;
-            if (checkBoxApplyCOStartup.Checked
-                && string.IsNullOrEmpty(comboBoxStartupProfile?.SelectedItem as string))
+
+            string name = comboBoxStartupProfile?.SelectedItem as string;
+            if (checkBoxApplyCOStartup.Checked)
             {
-                HandleError("Select a startup profile first.");
-                checkBoxApplyCOStartup.Checked = false;
+                if (string.IsNullOrEmpty(name))
+                {
+                    HandleError("Select a startup profile first.");
+                    checkBoxApplyCOStartup.Checked = false;
+                    return;
+                }
+                // The logon task bakes in this profile NAME and applies it headlessly (no UI)
+                // from this exe's profiles folder. If the profile isn't there, the startup run
+                // silently fails with "Profile not found" — so refuse to enable a doomed task.
+                if (profileManager.Load(name) == null)
+                {
+                    HandleError($"Profile '{name}' was not found in this build's profiles folder, " +
+                        "so it can't be applied at startup. Save it first, then enable this.");
+                    checkBoxApplyCOStartup.Checked = false;
+                    return;
+                }
+            }
+
+            try
+            {
+                RegisterOrRemoveStartupTask();
+            }
+            catch (Exception ex)
+            {
+                // Surface a real error and snap the checkbox back to the actual task state,
+                // instead of letting it bubble to the generic thread-exception popup.
+                HandleError($"Could not update the startup task: {ex.Message}");
+                _suppressStartupTaskUpdates = true;
+                checkBoxApplyCOStartup.Checked = StartupTaskService.Exists();
+                _suppressStartupTaskUpdates = false;
                 return;
             }
-            RegisterOrRemoveStartupTask();
-            PrependResult($"Startup settings saved." + Environment.NewLine);
+
+            PrependResult(checkBoxApplyCOStartup.Checked
+                ? $"Startup apply enabled for '{name}'." + Environment.NewLine
+                : "Startup apply disabled." + Environment.NewLine);
+        }
+
+        // Surfaces the most recent headless startup-apply outcome (from profiles\apply.log) in
+        // the results pane, so a silent logon-task failure (e.g. a missing profile) is visible.
+        private void ShowLastStartupApplyResult()
+        {
+            try
+            {
+                string logPath = Path.Combine(profilesPath, "apply.log");
+                if (!File.Exists(logPath)) return;
+
+                string[] lines = File.ReadAllLines(logPath);
+                for (int i = lines.Length - 1; i >= 0; i--)
+                {
+                    if (!string.IsNullOrWhiteSpace(lines[i]))
+                    {
+                        PrependResult($"Last startup apply: {lines[i].Trim()}" + Environment.NewLine);
+                        return;
+                    }
+                }
+            }
+            catch { /* never block startup on a log read */ }
         }
 
         private void ButtonApplyCoreMap_Click(object sender, EventArgs e)
