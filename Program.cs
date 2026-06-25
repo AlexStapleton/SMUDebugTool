@@ -1,5 +1,7 @@
 using System;
+using System.Diagnostics;
 using System.IO;
+using System.Threading;
 using System.Windows.Forms;
 using ZenStates.Core;
 using ZenStatesDebugTool.Profiles;
@@ -17,6 +19,7 @@ namespace ZenStatesDebugTool
             // profile name (if any) follows it, so the two can never disagree.
             if (TryGetApplyProfile(args, out string profileName))
             {
+                StartHeadlessWatchdog();
                 Environment.Exit(RunHeadlessApply(profileName));
                 return;
             }
@@ -97,8 +100,43 @@ namespace ZenStatesDebugTool
             }
             finally
             {
-                cpu?.Dispose();
+                // Best-effort dispose, bounded: on some systems (e.g. while the GUI instance
+                // also holds the driver) Cpu.Dispose can block, which would leave this headless
+                // logon process alive as a "Running" scheduled task. Don't wait forever — the
+                // apply is already done and logged, and the OS reclaims the handle on exit.
+                DisposeWithTimeout(cpu, TimeSpan.FromSeconds(3));
             }
+        }
+
+        // Best-effort Dispose that never blocks the caller longer than `timeout`.
+        private static void DisposeWithTimeout(IDisposable disposable, TimeSpan timeout)
+        {
+            if (disposable == null) return;
+            var thread = new Thread(() => { try { disposable.Dispose(); } catch { } })
+            {
+                IsBackground = true,
+                Name = "HeadlessApplyDispose"
+            };
+            thread.Start();
+            thread.Join(timeout);
+        }
+
+        // Hard backstop: a headless logon apply must never linger as a "Running" task. If the
+        // whole operation (driver init, SMU access, dispose, or shutdown) hasn't finished in
+        // time, force-terminate. On a normal run Environment.Exit fires first and this
+        // background thread dies with the process.
+        private static void StartHeadlessWatchdog()
+        {
+            var watchdog = new Thread(() =>
+            {
+                Thread.Sleep(TimeSpan.FromSeconds(45));
+                try { Process.GetCurrentProcess().Kill(); } catch { }
+            })
+            {
+                IsBackground = true,
+                Name = "HeadlessApplyWatchdog"
+            };
+            watchdog.Start();
         }
 
         private static void Log(string logPath, string message)
