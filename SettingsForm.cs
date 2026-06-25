@@ -394,11 +394,6 @@ namespace ZenStatesDebugTool
             checkBoxSMT.Checked = cpu.systemInfo.SMT;
         }
 
-        private static int ConvertMarginToInt(uint value)
-        {
-            return (sbyte)(unchecked(value));
-        }
-
         // The 5 Curve Shaper tiers (min, low, med, high, max), each [0]=low [1]=med [2]=high
         // designer control. Built once so the read/apply/save/load paths can loop over the
         // grid instead of repeating 15 hand-written lines (which were easy to get out of sync).
@@ -426,7 +421,7 @@ namespace ZenStatesDebugTool
 
             // No working read-back on this CPU (all zeros): show what we last applied this
             // session rather than blanking the values the user actually set.
-            if (IsAllZero(hw) && _lastAppliedCurveShaper != null)
+            if (CurveShaperCodec.IsAllZero(hw) && _lastAppliedCurveShaper != null)
             {
                 ApplyCurveShaperValues(_lastAppliedCurveShaper, showStatus: false);
                 if (showStatus)
@@ -435,22 +430,6 @@ namespace ZenStatesDebugTool
             }
 
             ApplyCurveShaperValues(hw, showStatus);
-        }
-
-        private static bool IsAllZero(uint[] values)
-        {
-            if (values == null) return true;
-            foreach (uint v in values)
-                if (v != 0) return false;
-            return true;
-        }
-
-        // Packs one tier's low/med/high margins into the GetAllCurveShaperMargins layout.
-        private static uint PackCurveShaperTier(int low, int med, int high)
-        {
-            return ((uint)(byte)(sbyte)low << 8)
-                 | ((uint)(byte)(sbyte)med << 16)
-                 | ((uint)(byte)(sbyte)high << 24);
         }
 
         // Apply-only half (UI thread); the read is done by the caller so the startup path
@@ -463,9 +442,10 @@ namespace ZenStatesDebugTool
 
             for (int tier = 0; tier < 5; tier++)
             {
-                CsGrid[tier][0].Value = ConvertMarginToInt(csValues[tier] >> 8 & 0xFF);
-                CsGrid[tier][1].Value = ConvertMarginToInt(csValues[tier] >> 16 & 0xFF);
-                CsGrid[tier][2].Value = ConvertMarginToInt(csValues[tier] >> 24 & 0xFF);
+                CurveShaperCodec.Unpack(csValues[tier], out int low, out int med, out int high);
+                CsGrid[tier][0].Value = low;
+                CsGrid[tier][1].Value = med;
+                CsGrid[tier][2].Value = high;
             }
 
             if (showStatus)
@@ -1842,15 +1822,6 @@ namespace ZenStatesDebugTool
             MessageBox.Show($"Report saved as {fileName}");
         }
 
-        public static void CalculatePstateDetails(uint eax, ref uint IddDiv, ref uint IddVal, ref uint CpuVid, ref uint CpuDfsId, ref uint CpuFid)
-        {
-            IddDiv = eax >> 30;
-            IddVal = eax >> 22 & 0xFF;
-            CpuVid = eax >> 14 & 0xFF;
-            CpuDfsId = eax >> 8 & 0x3F;
-            CpuFid = eax & 0xFF;
-        }
-
         private void ButtonExport_Click(object sender, EventArgs e)
         {
             RunBackgroundTask(BackgroundWorkerTrySettings_DoWork, BackgroundWorkerReport_RunWorkerCompleted);
@@ -1894,7 +1865,7 @@ namespace ZenStatesDebugTool
             int fid = int.TryParse(pstateFid.Text, out int f) ? f : 0;
             int did = int.TryParse(pstateDid.Text, out int d) ? d : 1;
             if (did == 0) did = 1; // avoid divide-by-zero
-            pstateFrequency.Text = (fid * 25 / (did * 12.5)) * 100 + "MHz";
+            pstateFrequency.Text = PStateMath.FrequencyMhz((uint)fid, (uint)did) + "MHz";
         }
 
         private void BtnPstateRead_Click(object sender, EventArgs e)
@@ -1910,17 +1881,11 @@ namespace ZenStatesDebugTool
                 return;
             }
 
-            uint IddDiv = 0x0;
-            uint IddVal = 0x0;
-            uint CpuVid = 0x0;
-            uint CpuDfsId = 0x0;
-            uint CpuFid = 0x0;
+            PStateValues pv = PStateMath.Decode(eax);
 
-            CalculatePstateDetails(eax, ref IddDiv, ref IddVal, ref CpuVid, ref CpuDfsId, ref CpuFid);
-
-            pstateDid.Text = Convert.ToString(CpuDfsId, 10);
-            pstateFid.Text = Convert.ToString(CpuFid, 10);
-            pstateFrequency.Text = (CpuFid * 25 / (CpuDfsId * 12.5)) * 100 + "MHz";
+            pstateDid.Text = Convert.ToString(pv.CpuDfsId, 10);
+            pstateFid.Text = Convert.ToString(pv.CpuFid, 10);
+            pstateFrequency.Text = PStateMath.FrequencyMhz(pv.CpuFid, pv.CpuDfsId) + "MHz";
 
             SetStatusText($@"PState {pstateId} successfully read.");
 
@@ -1951,11 +1916,6 @@ namespace ZenStatesDebugTool
 
             var pstateId = pstateIdBox.SelectedIndex;
             uint eax = default, edx = default;
-            uint IddDiv = 0x0;
-            uint IddVal = 0x0;
-            uint CpuVid = 0x0;
-            uint CpuDfsId = 0x0;
-            uint CpuFid = 0x0;
 
             uint readEax = 0, readEdx = 0;
             bool pstateReadOk = Hardware.Locked(() => cpu.ReadMsr(Convert.ToUInt32(Convert.ToInt64(0xC0010064) + pstateId), ref readEax, ref readEdx));
@@ -1966,9 +1926,9 @@ namespace ZenStatesDebugTool
                 return;
             }
 
-            CalculatePstateDetails(eax, ref IddDiv, ref IddVal, ref CpuVid, ref CpuDfsId, ref CpuFid);
-
-            eax = (IddDiv & 0xFF) << 30 | (IddVal & 0xFF) << 22 | (CpuVid & 0xFF) << 14 | (uint.Parse(pstateDid.Text) & 0xFF) << 8 | uint.Parse(pstateFid.Text) & 0xFF;
+            PStateValues pv = PStateMath.Decode(eax);
+            eax = PStateMath.Encode(pv.IddDiv, pv.IddVal, pv.CpuVid,
+                uint.Parse(pstateDid.Text), uint.Parse(pstateFid.Text));
 
             if (_numaUtil.HighestNumaNode > 0)
             {
@@ -3069,7 +3029,7 @@ namespace ZenStatesDebugTool
                 // Curve Shaper margins back (GetAllCurveShaperMargins returns 0 there).
                 _lastAppliedCurveShaper = new uint[5];
                 for (int tier = 0; tier < 5; tier++)
-                    _lastAppliedCurveShaper[tier] = PackCurveShaperTier(
+                    _lastAppliedCurveShaper[tier] = CurveShaperCodec.Pack(
                         (int)CsGrid[tier][0].Value,
                         (int)CsGrid[tier][1].Value,
                         (int)CsGrid[tier][2].Value);
