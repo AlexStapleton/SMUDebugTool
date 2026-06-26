@@ -183,6 +183,10 @@ namespace ZenStatesDebugTool
             BuildFrequencyTab();
             InitStartupProfileUi();
 
+            // Must run before the background hardware load (OnShown) so the Curve Shaper grid
+            // can fall back to the startup-applied values on CPUs that don't report them back.
+            SeedCurveShaperFromStartupProfile();
+
             comboBoxMailboxSelect.SelectedIndex = 0;
 
             ToolTip toolTip = new ToolTip();
@@ -274,7 +278,7 @@ namespace ZenStatesDebugTool
                         {
                             ApplyCoMargins(coMargins);
                             ApplyFMax(fmax);
-                            ApplyCurveShaperValues(csValues);
+                            ApplyCurveShaperValues(CurveShaperCodec.ResolveDisplay(csValues, _lastAppliedCurveShaper));
                             ApplyBclk(bclk);
                             ApplyProchot(prochot);
                             ApplyWmiCommands(wmiItems);
@@ -423,16 +427,33 @@ namespace ZenStatesDebugTool
             uint[] hw = Hardware.Locked(() => cpu.GetAllCurveShaperMargins());
 
             // No working read-back on this CPU (all zeros): show what we last applied this
-            // session rather than blanking the values the user actually set.
-            if (CurveShaperCodec.IsAllZero(hw) && _lastAppliedCurveShaper != null)
-            {
-                ApplyCurveShaperValues(_lastAppliedCurveShaper, showStatus: false);
-                if (showStatus)
-                    SetStatusText("Curve Shaper margins refreshed (showing last applied; this CPU does not report them back).");
-                return;
-            }
+            // session (or seeded from the startup profile) rather than blanking the values
+            // the user actually set.
+            uint[] shown = CurveShaperCodec.ResolveDisplay(hw, _lastAppliedCurveShaper);
+            bool usedFallback = !ReferenceEquals(shown, hw);
 
-            ApplyCurveShaperValues(hw, showStatus);
+            ApplyCurveShaperValues(shown, showStatus && !usedFallback);
+            if (showStatus && usedFallback)
+                SetStatusText("Curve Shaper margins refreshed (showing last applied; this CPU does not report them back).");
+        }
+
+        // On CPUs that don't report Curve Shaper margins back, a freshly launched GUI can't
+        // read what the headless logon task applied at boot (that ran in a separate process,
+        // so the in-session _lastAppliedCurveShaper starts empty). Seed it from the configured
+        // startup profile when the startup task is registered, so the grid and Refresh show the
+        // applied values instead of 0. Best-effort: never block startup on it.
+        private void SeedCurveShaperFromStartupProfile()
+        {
+            try
+            {
+                if (!StartupTaskService.Exists()) return;
+                string name = StartupTaskService.GetProfileName();
+                if (string.IsNullOrEmpty(name) || !ProfileManager.IsValidName(name)) return;
+                Profile profile = profileManager.Load(name);
+                if (profile == null) return;
+                _lastAppliedCurveShaper = CurveShaperCodec.PackProfileTiers(profile.CurveShaperTiers);
+            }
+            catch { /* seeding is best-effort */ }
         }
 
         // Apply-only half (UI thread); the read is done by the caller so the startup path
@@ -828,6 +849,12 @@ namespace ZenStatesDebugTool
                 // One lock covers every hardware write the applier performs (it does no UI
                 // Invoke), serializing it against monitors and other readers.
                 var result = Hardware.Locked(() => profileApplier.Apply(profile, cpu));
+
+                // Remember the Curve Shaper margins we just applied so the CS tab keeps showing
+                // them - including through a Refresh - on CPUs that don't report them back
+                // (GetAllCurveShaperMargins returns 0 there). The grid already holds these
+                // values, since the apply gathered them from it.
+                _lastAppliedCurveShaper = CurveShaperCodec.PackProfileTiers(profile.CurveShaperTiers);
 
                 string label = string.IsNullOrEmpty(name) ? "Current settings" : $"Profile '{name}'";
                 SetStatusText(result.Success ? $"{label} applied." : $"{label} applied with errors.");

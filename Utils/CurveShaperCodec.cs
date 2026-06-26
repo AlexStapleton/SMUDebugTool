@@ -1,3 +1,6 @@
+using System.Collections.Generic;
+using ZenStatesDebugTool.Profiles;
+
 namespace ZenStatesDebugTool
 {
     // Pure Curve Shaper margin packing/unpacking, extracted verbatim from SettingsForm.
@@ -28,6 +31,31 @@ namespace ZenStatesDebugTool
             foreach (uint v in values)
                 if (v != 0) return false;
             return true;
+        }
+
+        // Packs a profile's Curve Shaper tiers into the uint[5] word format that
+        // GetAllCurveShaperMargins returns (low/med/high in bits 8/16/24 per tier), so the
+        // startup-applied values can seed the session fallback. Returns null when the profile
+        // carries no Curve Shaper, meaning "nothing to seed".
+        public static uint[] PackProfileTiers(IList<CurveShaperTier> tiers)
+        {
+            if (tiers == null || tiers.Count == 0) return null;
+            var words = new uint[5];
+            for (int tier = 0; tier < 5 && tier < tiers.Count; tier++)
+            {
+                CurveShaperTier t = tiers[tier];
+                if (t != null)
+                    words[tier] = Pack(t.Low, t.Medium, t.High);
+            }
+            return words;
+        }
+
+        // Chooses what to show in the grid: a live hardware read normally, but the last-applied
+        // values when the CPU reports all-zeros (some CPUs don't report Curve Shaper margins
+        // back, so a blind hardware read would wipe values that are actually set).
+        public static uint[] ResolveDisplay(uint[] hardware, uint[] lastApplied)
+        {
+            return (IsAllZero(hardware) && lastApplied != null) ? lastApplied : hardware;
         }
     }
 }
