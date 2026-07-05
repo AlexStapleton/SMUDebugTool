@@ -183,9 +183,20 @@ namespace ZenStatesDebugTool
             BuildFrequencyTab();
             InitStartupProfileUi();
 
+            // Curve Shaper only exists on CPUs whose RSMU mailbox defines the messages
+            // (Zen 4/5 desktop; e.g. 9950X3D yes, 5800X3D no). On unsupported CPUs every
+            // Curve Shaper command would fail with UNKNOWN_CMD, so drop the tab and skip
+            // all Curve Shaper reads/writes instead of surfacing errors.
+            _curveShaperSupported = cpu.smu.Rsmu.SMU_MSG_SetCurveShaperMargin != 0
+                                 && cpu.smu.Rsmu.SMU_MSG_GetCurveShaperMargin != 0;
+            // Removed before BuildViewMenu below so the View menu doesn't offer it either.
+            if (!_curveShaperSupported)
+                tabControl1.TabPages.Remove(tabPageCS);
+
             // Must run before the background hardware load (OnShown) so the Curve Shaper grid
             // can fall back to the startup-applied values on CPUs that don't report them back.
-            SeedCurveShaperFromStartupProfile();
+            if (_curveShaperSupported)
+                SeedCurveShaperFromStartupProfile();
 
             comboBoxMailboxSelect.SelectedIndex = 0;
 
@@ -265,7 +276,8 @@ namespace ZenStatesDebugTool
                     {
                         coMargins = GatherCoMargins();
                         fmax = cpu.GetFMax();
-                        csValues = cpu.GetAllCurveShaperMargins();
+                        // null on unsupported CPUs; ApplyCurveShaperValues ignores null.
+                        csValues = _curveShaperSupported ? cpu.GetAllCurveShaperMargins() : null;
                         bclk = cpu.GetBclk();
                         prochot = cpu.IsProchotEnabled();
                     }
@@ -421,9 +433,21 @@ namespace ZenStatesDebugTool
         // instead of wiping the grid to 0.
         private uint[] _lastAppliedCurveShaper;
 
+        // Whether this CPU's RSMU mailbox defines the Curve Shaper messages (Zen 4/5).
+        // When false the Curve Shaper tab is removed and every read/write is skipped.
+        private bool _curveShaperSupported;
+
         // Synchronous read+apply, used by the Refresh button (UI thread).
         private void InitCS(bool showStatus = false)
         {
+            // Defensive: the tab is removed on unsupported CPUs, so this shouldn't be
+            // reachable there - but never send the command anyway.
+            if (!_curveShaperSupported)
+            {
+                if (showStatus) SetStatusText("Curve Shaper is not supported on this CPU.");
+                return;
+            }
+
             uint[] hw = Hardware.Locked(() => cpu.GetAllCurveShaperMargins());
 
             // No working read-back on this CPU (all zeros): show what we last applied this
@@ -3071,6 +3095,13 @@ namespace ZenStatesDebugTool
 
         private void ButtonApplyCS_Click(object sender, EventArgs e)
         {
+            // Defensive: the tab is removed on unsupported CPUs (see InitCS).
+            if (!_curveShaperSupported)
+            {
+                SetStatusText("Curve Shaper is not supported on this CPU.");
+                return;
+            }
+
             if (!_hardwareReady)
             {
                 SetStatusText("Still loading hardware values, please wait...");

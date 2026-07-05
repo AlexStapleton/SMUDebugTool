@@ -46,6 +46,9 @@ namespace ZenStatesDebugTool.Profiles
         private void ApplyCurveShaper(Profile p, Cpu cpu, ApplyResult r)
         {
             if (p.CurveShaperTiers == null) return;
+            // Same capability gate as CO above: pre-Zen4 mailboxes (e.g. Vermeer/5800X3D)
+            // never define the Curve Shaper message, so every Set would fail with UNKNOWN_CMD.
+            if (cpu.smu.Rsmu.SMU_MSG_SetCurveShaperMargin == 0) { r.Info("Curve Shaper not supported on this CPU; skipped."); return; }
             for (int tier = 0; tier < p.CurveShaperTiers.Count && tier < 5; tier++)
             {
                 var t = p.CurveShaperTiers[tier];
