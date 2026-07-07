@@ -26,5 +26,6 @@
     <Compile Include="..\..\Utils\PmTableLabeling.cs" Link="PmTableLabeling.cs" />
     <Compile Include="..\..\Utils\PStateMath.cs" Link="PStateMath.cs" />
     <Compile Include="..\..\Utils\CurveShaperCodec.cs" Link="CurveShaperCodec.cs" />
+    <Compile Include="..\..\Utils\VoltageCodec.cs" Link="VoltageCodec.cs" />
   </ItemGroup>
 </Project>
