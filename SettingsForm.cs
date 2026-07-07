@@ -1155,6 +1155,10 @@ namespace ZenStatesDebugTool
         // the rest to the SMU default (~2500 MHz). OC Mode overrides PBO / Curve Optimizer.
         private readonly Dictionary<int, NumericUpDown> freqControls = new Dictionary<int, NumericUpDown>();
 
+        // Single all-core manual-OC voltage input (SetOverclockCpuVid is package-wide;
+        // there is no per-core voltage). Null until BuildFrequencyTab runs.
+        private NumericUpDown _ocVoltageNud;
+
         private void BuildFrequencyTab()
         {
             freqControls.Clear();
@@ -1176,8 +1180,10 @@ namespace ZenStatesDebugTool
                 ForeColor = Color.Firebrick,
                 Margin = new Padding(0, 0, 0, 8),
                 Text = "Manual OC overrides PBO / Curve Optimizer. Every core runs at the fixed clock " +
-                       "you set below - no boost, no idle downclock. 'Apply all cores' writes ALL cores " +
-                       "at once. Too high can hang or reboot the PC."
+                       "you set below - no boost, no idle downclock. Core voltage is a SINGLE value " +
+                       "applied to ALL cores on every CCD. Recommended order: set voltage FIRST, then " +
+                       "frequency (applying voltage engages OC Mode and holds cores at ~2500 MHz until " +
+                       "you apply frequencies). Too high a voltage or clock can hang, reboot, or damage the CPU."
             });
 
             // Bulk fillers only populate the per-core fields below; nothing is sent until Apply.
@@ -1186,6 +1192,54 @@ namespace ZenStatesDebugTool
             {
                 foreach (var n in freqControls.Values) n.Value = allNud.Value;
             }));
+
+            // Single all-core voltage row with its own Apply button. Voltage is applied
+            // separately from frequency; recommended order is voltage first (see warning).
+            bool x3d = VoltageCodec.IsX3D(cpu.systemInfo.CpuName);
+            _ocVoltageNud = new NumericUpDown
+            {
+                Minimum = 0.700m,
+                // X3D parts share the rail with the voltage-sensitive V-Cache CCD, so cap lower.
+                Maximum = x3d ? 1.400m : 1.550m,
+                DecimalPlaces = 3,
+                Increment = 0.005m,
+                Value = 1.200m,
+                Width = 70,
+                Margin = new Padding(0, 2, 0, 0)
+            };
+            var voltRow = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.LeftToRight,
+                AutoSize = true,
+                WrapContents = false,
+                Margin = new Padding(0, 0, 0, 4)
+            };
+            voltRow.Controls.Add(new Label { Text = "Core voltage (all cores)", AutoSize = true, Width = 130, Margin = new Padding(0, 6, 8, 0) });
+            voltRow.Controls.Add(_ocVoltageNud);
+            var applyVoltBtn = new Button { Text = "Apply voltage", AutoSize = true, UseVisualStyleBackColor = true, Margin = new Padding(6, 0, 0, 0) };
+            applyVoltBtn.Click += (s, e) => ApplyOverclockVoltage();
+            voltRow.Controls.Add(applyVoltBtn);
+
+            // Capability guard: disable if the SMU defines no SetOverclockCpuVid message in
+            // either mailbox (not the case for any current target, but future-proof).
+            if (cpu.smu.Rsmu.SMU_MSG_SetOverclockCpuVid == 0
+                && cpu.smu.Mp1Smu.SMU_MSG_SetOverclockCpuVid == 0)
+            {
+                _ocVoltageNud.Enabled = false;
+                applyVoltBtn.Enabled = false;
+            }
+            else if (x3d)
+            {
+                voltRow.Controls.Add(new Label
+                {
+                    Text = "(X3D: shared with V-Cache CCD; capped 1.40 V)",
+                    AutoSize = true,
+                    ForeColor = Color.Firebrick,
+                    Margin = new Padding(8, 6, 0, 0)
+                });
+            }
+
+            root.Controls.Add(voltRow);
 
             int ccdCount = GetCcdCount();
             const int coresPerCcd = 8;
@@ -1278,6 +1332,32 @@ namespace ZenStatesDebugTool
                 SetStatusText($"Applied per-core frequencies to {freqControls.Count} cores (OC Mode on).");
             else
                 HandleError("Some cores failed to set. Check the values are in range and OC Mode is active.");
+        }
+
+        // Applies the single all-core manual-OC voltage. Enables OC Mode first so the
+        // fixed VID actually holds (outside OC Mode the SMU governs voltage). Recommended
+        // to run this BEFORE applying frequencies: this pins the voltage while cores idle
+        // at the OC-mode default (~2500 MHz), so frequency then ramps into an established
+        // voltage floor rather than a high clock on an undefined voltage.
+        private void ApplyOverclockVoltage()
+        {
+            if (cpu == null || _ocVoltageNud == null || !_ocVoltageNud.Enabled) return;
+
+            double volts = (double)_ocVoltageNud.Value;
+            bool svi3 = SmuDecodeAdapter.IsSvi3(cpu.info.codeName);
+            uint vid = VoltageCodec.VoltageToVid(volts, svi3);
+
+            EnableOCMode(true);
+            bool ok = Hardware.Locked(() => cpu.SetOverclockCpuVid(vid) == SMU.Status.OK);
+            if (ok)
+            {
+                // Report the voltage actually applied (derived from the VID), which can
+                // differ from the typed value when it rounds/clamps to an encodable VID.
+                double appliedVolts = VoltageCodec.VidToVoltage(vid, svi3);
+                SetStatusText($"{appliedVolts:0.000} V (VID {vid}) applied - OC Mode on. Apply frequencies next.");
+            }
+            else
+                HandleError("Failed to set core voltage.");
         }
 
         private NumericUpDown MakeFreqNud()

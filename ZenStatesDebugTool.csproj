@@ -124,6 +124,7 @@
     <Compile Include="Utils\WmiCmdListItem.cs" />
     <Compile Include="Utils\Hardware.cs" />
     <Compile Include="Utils\CoreTopology.cs" />
+    <Compile Include="Utils\VoltageCodec.cs" />
     <Compile Include="Utils\StartupTaskService.cs" />
     <Compile Include="Utils\SmuAddressSet.cs" />
     <Compile Include="Utils\UiSettings.cs" />
