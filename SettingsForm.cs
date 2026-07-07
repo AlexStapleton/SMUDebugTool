@@ -1350,7 +1350,12 @@ namespace ZenStatesDebugTool
             EnableOCMode(true);
             bool ok = Hardware.Locked(() => cpu.SetOverclockCpuVid(vid) == SMU.Status.OK);
             if (ok)
-                SetStatusText($"{volts:0.000} V (VID {vid}) applied - OC Mode on. Apply frequencies next.");
+            {
+                // Report the voltage actually applied (derived from the VID), which can
+                // differ from the typed value when it rounds/clamps to an encodable VID.
+                double appliedVolts = VoltageCodec.VidToVoltage(vid, svi3);
+                SetStatusText($"{appliedVolts:0.000} V (VID {vid}) applied - OC Mode on. Apply frequencies next.");
+            }
             else
                 HandleError("Failed to set core voltage.");
         }
