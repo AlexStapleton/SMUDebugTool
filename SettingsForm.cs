@@ -208,6 +208,19 @@ namespace ZenStatesDebugTool
                 "Checked = PROCHOT (thermal throttling) enabled. Uncheck and click Apply to " +
                 "disable temperature throttling - useful on extreme cooling, but risks overheating.");
 
+            // FMax (SetBoostLimitFrequencyAllCores) isn't available on CPUs before Zen 4
+            // (e.g. 5800X3D) - neither mailbox defines the message, so the command fails with
+            // UNKNOWN_CMD. Disable the input and Apply button so a click can't silently no-op;
+            // the profile-apply path skips it the same way (ProfileApplier.ApplyFmax).
+            _fmaxSupported = ProfileApplier.IsFmaxSupported(cpu);
+            if (!_fmaxSupported)
+            {
+                numericUpDownFmax.Enabled = false;
+                buttonApplyFMax.Enabled = false;
+                toolTip.SetToolTip(numericUpDownFmax, "FMax is not supported on this CPU.");
+                toolTip.SetToolTip(buttonApplyFMax, "FMax is not supported on this CPU.");
+            }
+
             // Built last, after every tab (including the dynamic Freq (OC) tab) exists, so the
             // controller's canonical list and View menu cover them all.
             BuildViewMenu();
@@ -275,7 +288,9 @@ namespace ZenStatesDebugTool
                     lock (Hardware.Sync)
                     {
                         coMargins = GatherCoMargins();
-                        fmax = cpu.GetFMax();
+                        // 0 on unsupported CPUs (skipped below); GetFMax has no working
+                        // read-back there anyway.
+                        fmax = _fmaxSupported ? cpu.GetFMax() : 0;
                         // null on unsupported CPUs; ApplyCurveShaperValues ignores null.
                         csValues = _curveShaperSupported ? cpu.GetAllCurveShaperMargins() : null;
                         bclk = cpu.GetBclk();
@@ -289,7 +304,8 @@ namespace ZenStatesDebugTool
                         try
                         {
                             ApplyCoMargins(coMargins);
-                            ApplyFMax(fmax);
+                            if (_fmaxSupported)
+                                ApplyFMax(fmax);
                             ApplyCurveShaperValues(CurveShaperCodec.ResolveDisplay(csValues, _lastAppliedCurveShaper));
                             ApplyBclk(bclk);
                             ApplyProchot(prochot);
@@ -437,6 +453,10 @@ namespace ZenStatesDebugTool
         // When false the Curve Shaper tab is removed and every read/write is skipped.
         private bool _curveShaperSupported;
 
+        // Whether SetFMax works on this CPU (Zen 4+). When false the FMax input/Apply
+        // button are disabled and the read-back is skipped.
+        private bool _fmaxSupported;
+
         // Synchronous read+apply, used by the Refresh button (UI thread).
         private void InitCS(bool showStatus = false)
         {
@@ -505,7 +525,8 @@ namespace ZenStatesDebugTool
         {
             RefreshCoMarginsFromHardware();
             InitStartupProfileUi();
-            SetFmaxFromReadback(Hardware.Locked(() => cpu.GetFMax()));
+            if (_fmaxSupported)
+                SetFmaxFromReadback(Hardware.Locked(() => cpu.GetFMax()));
         }
 
         // Per-core CO margin read + apply, on the UI thread (button path).
@@ -3010,6 +3031,13 @@ namespace ZenStatesDebugTool
 
         private void ButtonApplyFMax_Click(object sender, EventArgs e)
         {
+            // Defensive: the button is disabled on unsupported CPUs (see InitForm).
+            if (!_fmaxSupported)
+            {
+                SetStatusText("FMax is not supported on this CPU.");
+                return;
+            }
+
             uint targetFmax = (uint)numericUpDownFmax.Value;
             uint? newFmax = Hardware.Locked(() => cpu.SetFMax(targetFmax) ? (uint?)cpu.GetFMax() : null);
             if (newFmax.HasValue) {

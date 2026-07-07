@@ -40,7 +40,20 @@ namespace ZenStatesDebugTool.Profiles
         private void ApplyFmax(Profile p, Cpu cpu, ApplyResult r)
         {
             if (!p.Fmax.HasValue) return;
+            // FMax goes through SetBoostLimitFrequencyAllCores, which CPUs before Zen 4
+            // (e.g. Vermeer/5800X3D) define in neither the RSMU nor the MP1 mailbox - the
+            // command always comes back UNKNOWN_CMD. Skip with an info line instead of
+            // reporting a failure (matches the CO/Curve Shaper capability gates).
+            if (!IsFmaxSupported(cpu)) { r.Info("FMax not supported on this CPU; skipped."); return; }
             if (!cpu.SetFMax((uint)p.Fmax.Value)) r.Fail("Failed to set fmax.");
+        }
+
+        // Whether SetFMax can work: SetBoostLimitAllCore uses the RSMU message when it's
+        // defined and otherwise falls back to MP1, so support means at least one is nonzero.
+        public static bool IsFmaxSupported(Cpu cpu)
+        {
+            return cpu.smu.Rsmu.SMU_MSG_SetBoostLimitFrequencyAllCores != 0
+                || cpu.smu.Mp1Smu.SMU_MSG_SetBoostLimitFrequencyAllCores != 0;
         }
 
         private void ApplyCurveShaper(Profile p, Cpu cpu, ApplyResult r)
