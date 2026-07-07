@@ -24,6 +24,30 @@ which is defined from Zen 2 onward — so both target CPUs (9950X3D, 5800X3D) su
 A fixed override voltage is only honored while **OC mode is enabled**; outside OC
 mode the SMU governs voltage itself.
 
+## Dual-CCD and X3D behavior
+
+Desktop Ryzen (AM4 and AM5) has a **single shared VDDCR_CPU (VCORE) rail** that
+feeds every core across all CCDs. There is no per-CCD/CCX/core voltage command —
+`SetOverclockCpuVid` takes a single VID with no mask, and the library exposes no
+V-Cache/CCD voltage handling. So the manual OC voltage is **package-wide**: one
+value applied to all cores on both CCDs at once. Frequency remains granular (the
+existing tab already sets per-core / per-CCD clocks), but all cores share the one
+voltage.
+
+- **Uniform dual-CCD (e.g. 5950X)**: both CCDs are ordinary CCDs on the shared
+  rail, so a single all-core voltage is the normal manual-OC behavior — nothing
+  special.
+- **Asymmetric X3D (e.g. 9950X3D)**: CCD0 carries the 3D V-Cache and is
+  voltage-sensitive (the SMU normally caps its vcore to protect the stacked cache
+  die); CCD1 is a regular CCD. Because both CCDs share the one rail, a fixed
+  manual voltage **removes the SMU's protective cap on the cache CCD** — the value
+  set must be safe for the lower-tolerance V-Cache CCD.
+
+X3D handling: detect an X3D part from `systemInfo.CpuName` (contains "X3D" —
+the library gives no cleaner signal) and, on those parts, lower the voltage box
+maximum to **1.400 V** (default still 1.200 V) plus a stronger warning. Non-X3D
+parts keep the full 0.700–1.550 V range.
+
 ## Voltage → VID conversion
 
 The SMU takes a VID byte, not raw volts. Conversion is generation-aware:
@@ -69,11 +93,20 @@ mode into `VoltageCodec`.
 Added in `BuildFrequencyTab`:
 
 - A labeled row: "Core voltage (all cores)", a `NumericUpDown`
-  (`Minimum = 0.700`, `Maximum = 1.550`, `DecimalPlaces = 3`, `Increment = 0.005`,
-  `Value = 1.200`), and an **"Apply voltage"** button.
-- The existing red warning label is extended to state that applying voltage also
-  engages OC mode (which fixes all-core clocks), so frequency should normally be
-  set first.
+  (`Minimum = 0.700`, `DecimalPlaces = 3`, `Increment = 0.005`, `Value = 1.200`),
+  and an **"Apply voltage"** button. The `Maximum` is CPU-dependent: **1.400 V**
+  on X3D parts, **1.550 V** otherwise.
+- The existing red warning label is extended to state that (a) the voltage is a
+  single package-wide value applied to all cores on both CCDs, and (b) applying
+  voltage also engages OC mode (which fixes all-core clocks), so frequency should
+  normally be set first.
+- On X3D parts, an additional caution notes the shared rail also feeds the
+  voltage-sensitive V-Cache CCD, which is why the max is limited to 1.400 V.
+
+X3D detection is a pure string helper — `VoltageCodec.IsX3D(string cpuName)` —
+that checks for "X3D" (case-insensitive). Keeping it a string predicate (rather
+than taking the `cpu` object) lets it live in the pure codec and be unit tested;
+`SettingsForm` calls it with `cpu.systemInfo.CpuName`.
 
 ### 4. Apply logic — `ApplyOverclockVoltage()`
 
@@ -103,7 +136,8 @@ explanatory tooltip.
   per-core OC frequencies, which are also not part of profiles.
 - **Live read-back**: no reading of the current VID; the box defaults to 1.200 V,
   matching how the frequency fields default rather than read hardware.
-- **Per-core voltage**: unsupported by the SMU; voltage is all-core only.
+- **Per-core / per-CCD voltage**: unsupported by the hardware (single shared
+  VCORE rail) and the SMU; voltage is package-wide only.
 
 ## Error handling
 
@@ -122,6 +156,8 @@ explanatory tooltip.
 - Round-trip: `VidToVoltage(VoltageToVid(v)) ≈ v` within one VID step, per mode.
 - Clamping: 1.550 V on SVI3 → 255; values below the floor → 0; nothing exceeds
   the 0..255 byte range.
+- `IsX3D` detection: names containing "X3D" (e.g. "AMD Ryzen 9 9950X3D") return
+  true; regular names (e.g. "AMD Ryzen 9 5950X") return false; case-insensitive.
 
 Manual verification on hardware (both CPUs): apply a frequency, then a voltage,
 confirm the status line shows the expected VID and the machine remains stable;
