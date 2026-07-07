@@ -29,5 +29,14 @@ namespace ZenStatesDebugTool
             if (rounded > 255) rounded = 255;
             return (uint)rounded;
         }
+
+        // True for 3D V-Cache parts (name contains "X3D"), whose cache CCD shares
+        // the single core-voltage rail and tolerates less vcore. The library exposes
+        // no cleaner signal, so this is a name check. Null/empty -> false.
+        public static bool IsX3D(string cpuName)
+        {
+            return !string.IsNullOrEmpty(cpuName)
+                && cpuName.IndexOf("X3D", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
     }
 }

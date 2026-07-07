@@ -37,5 +37,18 @@ namespace ProfileCore.Tests
             double back = VoltageCodec.VidToVoltage(vid, svi3);
             Assert.True(System.Math.Abs(back - volts) <= 0.00625, $"got {back} for {volts}");
         }
+
+        [Theory]
+        [InlineData("AMD Ryzen 9 9950X3D 16-Core Processor", true)]
+        [InlineData("AMD Ryzen 7 5800X3D 8-Core Processor", true)]
+        [InlineData("amd ryzen 7 7800x3d", true)]   // case-insensitive
+        [InlineData("AMD Ryzen 9 5950X 16-Core Processor", false)]
+        [InlineData("AMD Ryzen 9 9950X 16-Core Processor", false)]
+        [InlineData("", false)]
+        [InlineData(null, false)]
+        public void IsX3D_detects_vcache_parts_by_name(string cpuName, bool expected)
+        {
+            Assert.Equal(expected, VoltageCodec.IsX3D(cpuName));
+        }
     }
 }
