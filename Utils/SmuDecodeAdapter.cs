@@ -46,7 +46,7 @@ namespace ZenStatesDebugTool
             return ZenStates.Core.Utils.VidToVoltage;
         }
 
-        private static bool IsSvi3(CodeName c)
+        public static bool IsSvi3(CodeName c)
         {
             switch (c)
             {
