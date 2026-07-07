@@ -1428,12 +1428,16 @@ namespace ZenStatesDebugTool
         // Builds the per-core frequency mask (CCD/CCX/core) the SMU expects. frequency is in MHz.
         private bool SetCoreFrequency(int coreIndex, int mhz)
         {
-            int ccxInCcd = cpu.info.family == Cpu.Family.FAMILY_19H ? 1 : 2;
-            int coresInCcx = 8 / ccxInCcd;
-            int ccd = coreIndex / 8;
-            int ccx = coreIndex / coresInCcx;
-            uint mask = (uint)(((ccd << 4 | ccx % 2 & 15) << 4 | coreIndex % 4 & 15) << 20);
-            return Hardware.Locked(() => cpu.SetFrequencySingleCore(mask, (uint)mhz));
+            // Let the library build the SMU core mask so the per-family layout is correct.
+            // MakeCoreMask (via this overload) uses ccd<<28 | (core%8)<<20 for Zen 3/4/5, and
+            // the 2x4-CCX split for older families. The previous hand-rolled mask assumed the
+            // old CCX layout, so cores 4-7 of each CCD got a wrong mask on Zen 3+ and failed to
+            // set (observed on the 9950X3D). coreIndex is a flat 0..N index over 8-core CCDs;
+            // core/ccd/ccx below feed MakeCoreMask correctly for both modern and legacy parts.
+            uint core = (uint)(coreIndex % 8);
+            uint ccd = (uint)(coreIndex / 8);
+            uint ccx = (uint)((coreIndex % 8) / 4);
+            return Hardware.Locked(() => cpu.SetFrequencySingleCore(core, ccd, ccx, (uint)mhz));
         }
 
         private void SetStatusText(string status)
