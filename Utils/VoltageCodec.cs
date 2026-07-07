@@ -1,3 +1,5 @@
+using System;
+
 namespace ZenStatesDebugTool
 {
     // Pure volts<->VID conversion for manual OC core voltage. WinForms- and
@@ -12,6 +14,20 @@ namespace ZenStatesDebugTool
             if (svi3)
                 return 0.245 + vid * 0.005;
             return 1.55 - vid / 160.0;
+        }
+
+        // Inverse of VidToVoltage, rounded to the nearest VID and clamped to the
+        // byte range the SMU accepts. Out-of-range voltages resolve to the nearest
+        // encodable VID (e.g. >~1.52 V on SVI3 -> 255) rather than throwing.
+        public static uint VoltageToVid(double volts, bool svi3)
+        {
+            double vid = svi3
+                ? (volts - 0.245) / 0.005
+                : (1.55 - volts) * 160.0;
+            long rounded = (long)Math.Round(vid, MidpointRounding.AwayFromZero);
+            if (rounded < 0) rounded = 0;
+            if (rounded > 255) rounded = 255;
+            return (uint)rounded;
         }
     }
 }

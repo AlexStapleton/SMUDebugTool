@@ -14,5 +14,28 @@ namespace ProfileCore.Tests
         {
             Assert.Equal(expected, VoltageCodec.VidToVoltage(vid, svi3), 3);
         }
+
+        [Theory]
+        [InlineData(1.200, true, 191u)]    // SVI3 known value
+        [InlineData(1.200, false, 56u)]    // SVI2 known value
+        [InlineData(1.550, true, 255u)]    // SVI3: (1.55-0.245)/0.005 = 261 -> clamp 255
+        [InlineData(0.100, true, 0u)]      // below SVI3 floor -> 0
+        [InlineData(2.000, false, 0u)]     // SVI2: (1.55-2.0)*160 < 0 -> clamp 0
+        public void VoltageToVid_converts_and_clamps(double volts, bool svi3, uint expected)
+        {
+            Assert.Equal(expected, VoltageCodec.VoltageToVid(volts, svi3));
+        }
+
+        [Theory]
+        [InlineData(0.900, true)]
+        [InlineData(1.350, true)]
+        [InlineData(0.900, false)]
+        [InlineData(1.350, false)]
+        public void VoltageToVid_then_VidToVoltage_round_trips_within_one_step(double volts, bool svi3)
+        {
+            uint vid = VoltageCodec.VoltageToVid(volts, svi3);
+            double back = VoltageCodec.VidToVoltage(vid, svi3);
+            Assert.True(System.Math.Abs(back - volts) <= 0.00625, $"got {back} for {volts}");
+        }
     }
 }
