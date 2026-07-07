@@ -1159,10 +1159,28 @@ namespace ZenStatesDebugTool
         // there is no per-core voltage). Null until BuildFrequencyTab runs.
         private NumericUpDown _ocVoltageNud;
 
+        // Whether this CPU allows manual OC (fixed frequency / fixed voltage via OC Mode).
+        // AMD fuses this off on X3D parts (e.g. 5800X3D), where the SMU rejects EnableOcMode
+        // and every OC write. Set in BuildFrequencyTab from the SMU's IsOverclockable answer.
+        private bool _manualOcSupported;
+
         private void BuildFrequencyTab()
         {
             freqControls.Clear();
             var tab = new TabPage("Freq (OC)") { Name = "tabPageFreqOC" };
+
+            // Only treat OC as locked on a DEFINITIVE "not overclockable" answer: the SMU must
+            // define the IsOverclockable query and report OC disabled. If the query isn't defined
+            // we can't tell, so leave the tab enabled (an Apply would surface its own error).
+            bool ocQueryDefined = cpu.smu.Rsmu.SMU_MSG_IsOverclockable != 0;
+            _manualOcSupported = !ocQueryDefined
+                || Hardware.Locked(() => cpu.GetOverclockingCaps()[OcCapabilities.OverclockingEnabled]);
+            if (!_manualOcSupported)
+            {
+                BuildManualOcLockedTab(tab);
+                tabControl1.TabPages.Add(tab);
+                return;
+            }
 
             var root = new FlowLayoutPanel
             {
@@ -1301,6 +1319,40 @@ namespace ZenStatesDebugTool
             tab.Controls.Add(root);
             tab.Controls.Add(actionBar);
             tabControl1.TabPages.Add(tab);
+        }
+
+        // Content for the Freq (OC) tab on CPUs where manual OC is fused off (e.g. X3D parts):
+        // explain why the controls aren't here and point at what does work, instead of offering
+        // frequency/voltage inputs whose Apply always fails at the SMU. CO / PBO are unaffected.
+        private void BuildManualOcLockedTab(TabPage tab)
+        {
+            var root = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.TopDown,
+                WrapContents = false,
+                AutoScroll = true,
+                Padding = new Padding(12)
+            };
+            root.Controls.Add(new Label
+            {
+                AutoSize = true,
+                MaximumSize = new Size(340, 0),
+                ForeColor = Color.Firebrick,
+                Font = new Font(Font, FontStyle.Bold),
+                Text = "Manual OC is locked on this CPU."
+            });
+            root.Controls.Add(new Label
+            {
+                AutoSize = true,
+                MaximumSize = new Size(340, 0),
+                Margin = new Padding(0, 8, 0, 0),
+                Text = "AMD fuses off manual overclocking on X3D processors (e.g. the 5800X3D) to " +
+                       "protect the 3D V-Cache, so a fixed all-core frequency and a fixed core " +
+                       "voltage can't be applied here - the SMU rejects OC Mode. Use Curve Optimizer " +
+                       "(per-core undervolt) and PBO limits on the CPU / PBO tabs to tune this CPU instead."
+            });
+            tab.Controls.Add(root);
         }
 
         private FlowLayoutPanel MakeBulkRow(string label, NumericUpDown nud, System.Action onSet)
