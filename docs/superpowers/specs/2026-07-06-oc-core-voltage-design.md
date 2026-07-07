@@ -5,7 +5,9 @@
 Add the ability to set a fixed all-core CPU voltage on the **Freq (OC)** tab,
 alongside the existing manual per-core frequency override, so a user can run a
 classic manual overclock (fixed clock + fixed vcore). Frequency and voltage are
-applied by separate buttons.
+applied by separate buttons; the recommended order is **voltage first, then
+frequency**, so clocks ramp into an already-established voltage floor rather than
+running a high fixed clock on an undefined voltage.
 
 ## Background / current state
 
@@ -97,9 +99,13 @@ Added in `BuildFrequencyTab`:
   and an **"Apply voltage"** button. The `Maximum` is CPU-dependent: **1.400 V**
   on X3D parts, **1.550 V** otherwise.
 - The existing red warning label is extended to state that (a) the voltage is a
-  single package-wide value applied to all cores on both CCDs, and (b) applying
-  voltage also engages OC mode (which fixes all-core clocks), so frequency should
-  normally be set first.
+  single package-wide value applied to all cores on both CCDs, and (b) the
+  recommended order is **voltage first, then frequency** — "Apply voltage" engages
+  OC mode and pins the vcore while cores are still at the OC-mode default clock, so
+  frequency then ramps into an established voltage floor rather than the cores
+  running a high fixed clock on an undefined/insufficient voltage. It also notes
+  that after "Apply voltage" the cores sit at the OC-mode default (~2500 MHz) until
+  frequency is applied.
 - On X3D parts, an additional caution notes the shared rail also feeds the
   voltage-sensitive V-Cache CCD, which is why the max is limited to 1.400 V.
 
@@ -145,8 +151,10 @@ explanatory tooltip.
   1.550 V on SVI3) resolve to the nearest valid VID and the resolved VID is shown.
 - A failed `SetOverclockCpuVid` surfaces via `HandleError`, consistent with the
   frequency apply path.
-- OC-mode side effect (clocks drop to SMU default until frequencies are applied)
-  is documented in the tab warning and implied by the "OC Mode on" status.
+- OC-mode side effect (after "Apply voltage" the cores sit at the SMU default
+  clock until frequencies are applied) is the expected intermediate state of the
+  recommended voltage-first flow — documented in the tab warning and implied by
+  the "OC Mode on" status, not an error.
 
 ## Testing
 
