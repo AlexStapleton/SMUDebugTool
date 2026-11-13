@@ -1363,6 +1363,7 @@ namespace ZenStatesDebugTool
             if (!_hardwareReady) { SetStatusText("Hardware is still loading."); return; }
             if (!_manualOcSupported || cpu == null || freqControls.Count == 0) return;
             var values = freqControls.Where(x => x.Value.Enabled && IsCoreEnabled(x.Key)).ToDictionary(x => x.Key, x => (int)x.Value.Value);
+            if (values.Count == 0) { SetStatusText("No validated core targets are available for manual OC."); return; }
             try
             {
                 bool ok = await RunHardwareAsync(() => Hardware.Locked(() =>

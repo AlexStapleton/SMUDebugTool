@@ -30,10 +30,7 @@ foreach ($culture in @('de','es','fr','it','pl','ru','zh-CN','zh-Hant')) {
     $relative = "$culture/Microsoft.Win32.TaskScheduler.resources.dll"
     $inputs[$relative] = Join-Path $build $relative
 }
-foreach ($file in Get-ChildItem -LiteralPath $build -Recurse -Filter SMUDebugTool.resources.dll) {
-    $relative = $file.FullName.Substring($build.Length + 1).Replace('\','/')
-    $inputs[$relative] = $file.FullName
-}
+$inputs['zh-CN/SMUDebugTool.resources.dll'] = Join-Path $build 'zh-CN/SMUDebugTool.resources.dll'
 $inputs['LICENSE.md'] = Join-Path $root 'LICENSE.md'
 $inputs['licenses/ZenStates-Core.txt'] = Join-Path $root 'vendor/ZenStates-Core/LICENSE'
 $inputs['licenses/InpOut.txt'] = Join-Path $root 'vendor/ZenStates-Core/External/InpOut/license.txt'

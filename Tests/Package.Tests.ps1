@@ -45,6 +45,9 @@ ExpectFailure { & $package -BuildDirectory $fixture -OutputDirectory (Join-Path 
 Copy-Item -LiteralPath (Join-Path $BuildDirectory 'inpoutx64.dll') -Destination (Join-Path $fixture 'inpoutx64.dll')
 Move-Item -LiteralPath (Join-Path $fixture 'de\Microsoft.Win32.TaskScheduler.resources.dll') -Destination (Join-Path $fixture 'missing-satellite.dll')
 ExpectFailure { & $package -BuildDirectory $fixture -OutputDirectory (Join-Path $scratch 'missing-satellite') } 'missing satellite'
+Copy-Item -LiteralPath (Join-Path $BuildDirectory 'de\Microsoft.Win32.TaskScheduler.resources.dll') -Destination (Join-Path $fixture 'de\Microsoft.Win32.TaskScheduler.resources.dll')
+Move-Item -LiteralPath (Join-Path $fixture 'zh-CN\SMUDebugTool.resources.dll') -Destination (Join-Path $fixture 'missing-ui-language.dll')
+ExpectFailure { & $package -BuildDirectory $fixture -OutputDirectory (Join-Path $scratch 'missing-ui-language') } 'missing UI localization'
 ExpectFailure { & $package -BuildDirectory $BuildDirectory -OutputDirectory (Join-Path $scratch 'missing-notes') -ReleaseNotes (Join-Path $scratch 'absent.md') } 'missing notes'
 $corrupt = Join-Path $scratch 'corrupt.zip'
 Copy-Item -LiteralPath $first -Destination $corrupt
