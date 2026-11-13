@@ -146,6 +146,7 @@ namespace ZenStatesDebugTool
 
         private void Save()
         {
+            _settings.Language = UiText.Language;
             try { _settingsManager.Save(_settings); }
             catch { /* a persistence failure shouldn't break the UI */ }
         }

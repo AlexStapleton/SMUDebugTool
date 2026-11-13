@@ -12,6 +12,10 @@ namespace ZenStatesDebugTool
         TuningReply Write(TuningRequest request);
         TuningReply Read(TuningRequest request);
     }
+    public interface IProfilePreflight
+    {
+        string ValidateProfile(Profile profile);
+    }
 
     // No UI, driver construction, retries, clamping, or cached readbacks in this layer.
     // Callers serialize the entire operation against other hardware access.
@@ -19,6 +23,15 @@ namespace ZenStatesDebugTool
     {
         private readonly ITuningTransport transport;
         public TuningService(ITuningTransport transport) { this.transport = transport ?? throw new ArgumentNullException(nameof(transport)); }
+        public static string ValidateProfileInput(Profile profile)
+            => profile != null && (profile.SchemaVersion < 1 || profile.SchemaVersion > 2) ? "Unsupported profile schema version." :
+                new TuningService(new ValidationTransport()).Apply(profile).Rows.FirstOrDefault(r => r.Outcome == TuningOutcome.Invalid)?.Reason;
+        private sealed class ValidationTransport : ITuningTransport
+        {
+            public bool IsSupported(TuningRequest request, out string reason) { reason = "Validation only"; return false; }
+            public TuningReply Write(TuningRequest request) => throw new InvalidOperationException("Validation cannot write.");
+            public TuningReply Read(TuningRequest request) => throw new InvalidOperationException("Validation cannot read.");
+        }
 
         public TuningResult Apply(Profile profile, CancellationToken cancellation = default(CancellationToken))
         {
@@ -27,6 +40,13 @@ namespace ZenStatesDebugTool
             {
                 var invalid = new TuningResult();
                 invalid.Rows.Add(new TuningRow { Request = new TuningRequest(), Outcome = TuningOutcome.Invalid, Reason = "Profile is null; no commands sent." });
+                return invalid;
+            }
+            string preflightError = (transport as IProfilePreflight)?.ValidateProfile(profile);
+            if (preflightError != null)
+            {
+                var invalid = new TuningResult { Label = profile.Name ?? "Profile" };
+                invalid.Rows.Add(new TuningRow { Request = new TuningRequest(), Outcome = TuningOutcome.Invalid, Reason = preflightError + "; no commands sent." });
                 return invalid;
             }
             if (profile.CoMargins != null)

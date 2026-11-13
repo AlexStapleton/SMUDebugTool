@@ -1,0 +1,363 @@
+<?xml version='1.0' encoding='utf-8'?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms</value>
+  </resheader>
+  <data name="ARG Address" xml:space="preserve">
+    <value>ARG Address</value>
+  </data>
+  <data name="Apply" xml:space="preserve">
+    <value>Apply</value>
+  </data>
+  <data name="Apply all cores" xml:space="preserve">
+    <value>Apply all cores</value>
+  </data>
+  <data name="Apply saved profile on startup" xml:space="preserve">
+    <value>Apply saved profile on startup</value>
+  </data>
+  <data name="Apply voltage" xml:space="preserve">
+    <value>Apply voltage</value>
+  </data>
+  <data name="Argument" xml:space="preserve">
+    <value>Argument</value>
+  </data>
+  <data name="Arguments" xml:space="preserve">
+    <value>Arguments</value>
+  </data>
+  <data name="BIOS" xml:space="preserve">
+    <value>BIOS</value>
+  </data>
+  <data name="CMD Address" xml:space="preserve">
+    <value>CMD Address</value>
+  </data>
+  <data name="Command" xml:space="preserve">
+    <value>Command</value>
+  </data>
+  <data name="Command ID" xml:space="preserve">
+    <value>Command ID</value>
+  </data>
+  <data name="Config" xml:space="preserve">
+    <value>Config</value>
+  </data>
+  <data name="Copy report" xml:space="preserve">
+    <value>Copy report</value>
+  </data>
+  <data name="Core Control" xml:space="preserve">
+    <value>Core Control</value>
+  </data>
+  <data name="Core mapping" xml:space="preserve">
+    <value>Core mapping</value>
+  </data>
+  <data name="Core voltage (all cores)" xml:space="preserve">
+    <value>Core voltage (all cores)</value>
+  </data>
+  <data name="Core {0}" xml:space="preserve">
+    <value>Core {0}</value>
+  </data>
+  <data name="Current settings" xml:space="preserve">
+    <value>Current settings</value>
+  </data>
+  <data name="Curve Shaper" xml:space="preserve">
+    <value>Curve Shaper</value>
+  </data>
+  <data name="DID (n/a)" xml:space="preserve">
+    <value>DID (n/a)</value>
+  </data>
+  <data name="Debug Report" xml:space="preserve">
+    <value>Debug Report</value>
+  </data>
+  <data name="Decode" xml:space="preserve">
+    <value>Decode</value>
+  </data>
+  <data name="Default Tab" xml:space="preserve">
+    <value>Default Tab</value>
+  </data>
+  <data name="Delete" xml:space="preserve">
+    <value>Delete</value>
+  </data>
+  <data name="Deselect the cores you want to disable and click Apply" xml:space="preserve">
+    <value>Deselect the cores you want to disable and click Apply</value>
+  </data>
+  <data name="Details" xml:space="preserve">
+    <value>Details</value>
+  </data>
+  <data name="Disable OC Mode" xml:space="preserve">
+    <value>Disable OC Mode</value>
+  </data>
+  <data name="Driver diagnostics and maintenance" xml:space="preserve">
+    <value>Driver diagnostics and maintenance</value>
+  </data>
+  <data name="Dump" xml:space="preserve">
+    <value>Dump</value>
+  </data>
+  <data name="Dump Name" xml:space="preserve">
+    <value>Dump Name</value>
+  </data>
+  <data name="EDC (A)" xml:space="preserve">
+    <value>EDC (A)</value>
+  </data>
+  <data name="End Address" xml:space="preserve">
+    <value>End Address</value>
+  </data>
+  <data name="End Register" xml:space="preserve">
+    <value>End Register</value>
+  </data>
+  <data name="End session and remove owned driver" xml:space="preserve">
+    <value>End session and remove owned driver</value>
+  </data>
+  <data name="Firmware" xml:space="preserve">
+    <value>Firmware</value>
+  </data>
+  <data name="Freq (OC)" xml:space="preserve">
+    <value>Freq (OC)</value>
+  </data>
+  <data name="Frequency" xml:space="preserve">
+    <value>Frequency</value>
+  </data>
+  <data name="High" xml:space="preserve">
+    <value>High</value>
+  </data>
+  <data name="High T" xml:space="preserve">
+    <value>High T</value>
+  </data>
+  <data name="Info" xml:space="preserve">
+    <value>Info</value>
+  </data>
+  <data name="Initializing hardware..." xml:space="preserve">
+    <value>Initializing hardware...</value>
+  </data>
+  <data name="Language" xml:space="preserve">
+    <value>Language</value>
+  </data>
+  <data name="Load" xml:space="preserve">
+    <value>Load</value>
+  </data>
+  <data name="Low" xml:space="preserve">
+    <value>Low</value>
+  </data>
+  <data name="Low T" xml:space="preserve">
+    <value>Low T</value>
+  </data>
+  <data name="MB Model" xml:space="preserve">
+    <value>MB Model</value>
+  </data>
+  <data name="MB Vendor" xml:space="preserve">
+    <value>MB Vendor</value>
+  </data>
+  <data name="Mailbox" xml:space="preserve">
+    <value>Mailbox</value>
+  </data>
+  <data name="Manual" xml:space="preserve">
+    <value>Manual</value>
+  </data>
+  <data name="Manual OC is locked on this CPU." xml:space="preserve">
+    <value>Manual OC is locked on this CPU.</value>
+  </data>
+  <data name="Maximum" xml:space="preserve">
+    <value>Maximum</value>
+  </data>
+  <data name="Medium" xml:space="preserve">
+    <value>Medium</value>
+  </data>
+  <data name="Medium T" xml:space="preserve">
+    <value>Medium T</value>
+  </data>
+  <data name="Minimum" xml:space="preserve">
+    <value>Minimum</value>
+  </data>
+  <data name="Model" xml:space="preserve">
+    <value>Model</value>
+  </data>
+  <data name="Monitor" xml:space="preserve">
+    <value>Monitor</value>
+  </data>
+  <data name="No apply results yet." xml:space="preserve">
+    <value>No apply results yet.</value>
+  </data>
+  <data name="OFF" xml:space="preserve">
+    <value>OFF</value>
+  </data>
+  <data name="ON" xml:space="preserve">
+    <value>ON</value>
+  </data>
+  <data name="Observed" xml:space="preserve">
+    <value>Observed</value>
+  </data>
+  <data name="Outcome" xml:space="preserve">
+    <value>Outcome</value>
+  </data>
+  <data name="PBO Scalar" xml:space="preserve">
+    <value>PBO Scalar</value>
+  </data>
+  <data name="PCI Register" xml:space="preserve">
+    <value>PCI Register</value>
+  </data>
+  <data name="PMTable" xml:space="preserve">
+    <value>PMTable</value>
+  </data>
+  <data name="PPT (W)" xml:space="preserve">
+    <value>PPT (W)</value>
+  </data>
+  <data name="PState ID" xml:space="preserve">
+    <value>PState ID</value>
+  </data>
+  <data name="PStates" xml:space="preserve">
+    <value>PStates</value>
+  </data>
+  <data name="Package" xml:space="preserve">
+    <value>Package</value>
+  </data>
+  <data name="Profile" xml:space="preserve">
+    <value>Profile</value>
+  </data>
+  <data name="RSP Address" xml:space="preserve">
+    <value>RSP Address</value>
+  </data>
+  <data name="Re-read from CPU" xml:space="preserve">
+    <value>Re-read from CPU</value>
+  </data>
+  <data name="Read" xml:space="preserve">
+    <value>Read</value>
+  </data>
+  <data name="ReadCommand" xml:space="preserve">
+    <value>ReadCommand</value>
+  </data>
+  <data name="ReadRoute" xml:space="preserve">
+    <value>ReadRoute</value>
+  </data>
+  <data name="ReadStatus" xml:space="preserve">
+    <value>ReadStatus</value>
+  </data>
+  <data name="ReadbackSource" xml:space="preserve">
+    <value>ReadbackSource</value>
+  </data>
+  <data name="Reason" xml:space="preserve">
+    <value>Reason</value>
+  </data>
+  <data name="Refresh" xml:space="preserve">
+    <value>Refresh</value>
+  </data>
+  <data name="Requested" xml:space="preserve">
+    <value>Requested</value>
+  </data>
+  <data name="Requested VID" xml:space="preserve">
+    <value>Requested VID</value>
+  </data>
+  <data name="Reset" xml:space="preserve">
+    <value>Reset</value>
+  </data>
+  <data name="Save" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="Scan" xml:space="preserve">
+    <value>Scan</value>
+  </data>
+  <data name="Send" xml:space="preserve">
+    <value>Send</value>
+  </data>
+  <data name="Set" xml:space="preserve">
+    <value>Set</value>
+  </data>
+  <data name="Setting" xml:space="preserve">
+    <value>Setting</value>
+  </data>
+  <data name="Start" xml:space="preserve">
+    <value>Start</value>
+  </data>
+  <data name="Start Address" xml:space="preserve">
+    <value>Start Address</value>
+  </data>
+  <data name="Start Register" xml:space="preserve">
+    <value>Start Register</value>
+  </data>
+  <data name="Startup profile" xml:space="preserve">
+    <value>Startup profile</value>
+  </data>
+  <data name="Status" xml:space="preserve">
+    <value>Status</value>
+  </data>
+  <data name="Stop" xml:space="preserve">
+    <value>Stop</value>
+  </data>
+  <data name="TDC (A)" xml:space="preserve">
+    <value>TDC (A)</value>
+  </data>
+  <data name="Target" xml:space="preserve">
+    <value>Target</value>
+  </data>
+  <data name="TimeUtc" xml:space="preserve">
+    <value>TimeUtc</value>
+  </data>
+  <data name="Tools" xml:space="preserve">
+    <value>Tools</value>
+  </data>
+  <data name="Unit" xml:space="preserve">
+    <value>Unit</value>
+  </data>
+  <data name="VID voltage (derived)" xml:space="preserve">
+    <value>VID voltage (derived)</value>
+  </data>
+  <data name="Value" xml:space="preserve">
+    <value>Value</value>
+  </data>
+  <data name="Values" xml:space="preserve">
+    <value>Values</value>
+  </data>
+  <data name="View" xml:space="preserve">
+    <value>View</value>
+  </data>
+  <data name="Write" xml:space="preserve">
+    <value>Write</value>
+  </data>
+  <data name="Write VID" xml:space="preserve">
+    <value>Write VID</value>
+  </data>
+  <data name="WriteCommand" xml:space="preserve">
+    <value>WriteCommand</value>
+  </data>
+  <data name="WriteRoute" xml:space="preserve">
+    <value>WriteRoute</value>
+  </data>
+  <data name="WriteStatus" xml:space="preserve">
+    <value>WriteStatus</value>
+  </data>
+  <data name="X3D Turbo Mode" xml:space="preserve">
+    <value>X3D Turbo Mode</value>
+  </data>
+  <data name="Review profile core targets" xml:space="preserve">
+    <value>Review profile core targets</value>
+  </data>
+  <data name="Load reviewed bindings" xml:space="preserve">
+    <value>Load reviewed bindings</value>
+  </data>
+  <data name="SavedSlot" xml:space="preserve">
+    <value>SavedSlot</value>
+  </data>
+  <data name="SavedIdentity" xml:space="preserve">
+    <value>SavedIdentity</value>
+  </data>
+  <data name="CurrentIdentity" xml:space="preserve">
+    <value>CurrentIdentity</value>
+  </data>
+  <data name="CurrentSlot" xml:space="preserve">
+    <value>CurrentSlot</value>
+  </data>
+  <data name="Resolution" xml:space="preserve">
+    <value>Resolution</value>
+  </data>
+  <data name="PhysicalTarget" xml:space="preserve">
+    <value>PhysicalTarget</value>
+  </data>
+  <data name="Margin" xml:space="preserve">
+    <value>Margin</value>
+  </data>
+</root>

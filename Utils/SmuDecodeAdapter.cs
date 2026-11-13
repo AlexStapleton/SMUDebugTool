@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using ZenStates.Core;
+using ZenStates.Core.Hardware;
+using ZenStates.Core.Hardware.Smu;
 using static ZenStates.Core.Cpu;
 
 namespace ZenStatesDebugTool

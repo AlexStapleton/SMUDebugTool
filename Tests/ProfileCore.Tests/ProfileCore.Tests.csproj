@@ -6,6 +6,17 @@
     <RootNamespace>ProfileCore.Tests</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="..\..\Utils\PStateVidControls.cs" />
+    <Compile Include="..\..\Profiles\ProfileTargetReview.cs" />
+    <EmbeddedResource Include="..\..\Resources\UiStrings.resx"><LogicalName>ZenStatesDebugTool.Resources.UiStrings.resources</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="..\..\Resources\UiStrings.zh-CN.resx"><LogicalName>ZenStatesDebugTool.Resources.UiStrings.zh-CN.resources</LogicalName></EmbeddedResource>
+    <Reference Include="System.ServiceProcess" />
+    <Compile Include="..\..\Utils\PStateVidWriter.cs" />
+    <Compile Include="..\..\Utils\DriverMaintenance.cs" />
+    <Compile Include="..\..\Utils\UiText.cs" />
+    <Compile Include="..\..\Utils\UiLayout.cs" />
+    <Compile Include="..\..\Utils\CoreLibraryAdapter.cs" />
+    <Compile Include="..\..\Utils\TopologySnapshot.cs" />
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Drawing" />
     <Compile Include="..\..\ApplyResultsForm.cs" Link="ApplyResultsForm.cs" />
@@ -17,9 +28,7 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
   <ItemGroup>
-    <Reference Include="ZenStates-Core">
-      <HintPath>..\..\Prebuilt\ZenStates-Core.dll</HintPath>
-    </Reference>
+    <ProjectReference Include="..\..\vendor\ZenStates-Core.Net48.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="..\..\Utils\TuningResult.cs" Link="TuningResult.cs" />

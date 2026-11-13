@@ -11,6 +11,9 @@ namespace ZenStatesDebugTool.Profiles
 
     public class Profile
     {
+        public int SchemaVersion { get; set; } = 1;
+        public string TopologySignature { get; set; }
+        public Dictionary<int, string> CoreBindings { get; set; }
         public string Name { get; set; }
 
         // Core index -> CO margin value.

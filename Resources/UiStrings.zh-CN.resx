@@ -1,0 +1,363 @@
+<?xml version='1.0' encoding='utf-8'?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms</value>
+  </resheader>
+  <data name="ARG Address" xml:space="preserve">
+    <value>参数地址</value>
+  </data>
+  <data name="Apply" xml:space="preserve">
+    <value>应用</value>
+  </data>
+  <data name="Apply all cores" xml:space="preserve">
+    <value>应用所有核心</value>
+  </data>
+  <data name="Apply saved profile on startup" xml:space="preserve">
+    <value>启动时应用保存的配置</value>
+  </data>
+  <data name="Apply voltage" xml:space="preserve">
+    <value>应用电压</value>
+  </data>
+  <data name="Argument" xml:space="preserve">
+    <value>参数</value>
+  </data>
+  <data name="Arguments" xml:space="preserve">
+    <value>参数</value>
+  </data>
+  <data name="BIOS" xml:space="preserve">
+    <value>BIOS</value>
+  </data>
+  <data name="CMD Address" xml:space="preserve">
+    <value>命令地址</value>
+  </data>
+  <data name="Command" xml:space="preserve">
+    <value>命令</value>
+  </data>
+  <data name="Command ID" xml:space="preserve">
+    <value>命令编号</value>
+  </data>
+  <data name="Config" xml:space="preserve">
+    <value>配置</value>
+  </data>
+  <data name="Copy report" xml:space="preserve">
+    <value>复制报告</value>
+  </data>
+  <data name="Core Control" xml:space="preserve">
+    <value>核心控制</value>
+  </data>
+  <data name="Core mapping" xml:space="preserve">
+    <value>核心映射</value>
+  </data>
+  <data name="Core voltage (all cores)" xml:space="preserve">
+    <value>核心电压（所有核心）</value>
+  </data>
+  <data name="Core {0}" xml:space="preserve">
+    <value>核心 {0}</value>
+  </data>
+  <data name="Current settings" xml:space="preserve">
+    <value>当前设置</value>
+  </data>
+  <data name="Curve Shaper" xml:space="preserve">
+    <value>曲线塑形</value>
+  </data>
+  <data name="DID (n/a)" xml:space="preserve">
+    <value>DID（不适用）</value>
+  </data>
+  <data name="Debug Report" xml:space="preserve">
+    <value>调试报告</value>
+  </data>
+  <data name="Decode" xml:space="preserve">
+    <value>解码</value>
+  </data>
+  <data name="Default Tab" xml:space="preserve">
+    <value>默认标签页</value>
+  </data>
+  <data name="Delete" xml:space="preserve">
+    <value>删除</value>
+  </data>
+  <data name="Deselect the cores you want to disable and click Apply" xml:space="preserve">
+    <value>取消勾选要禁用的核心，然后单击应用</value>
+  </data>
+  <data name="Details" xml:space="preserve">
+    <value>详情</value>
+  </data>
+  <data name="Disable OC Mode" xml:space="preserve">
+    <value>禁用超频模式</value>
+  </data>
+  <data name="Driver diagnostics and maintenance" xml:space="preserve">
+    <value>驱动诊断与维护</value>
+  </data>
+  <data name="Dump" xml:space="preserve">
+    <value>转储</value>
+  </data>
+  <data name="Dump Name" xml:space="preserve">
+    <value>转储文件名</value>
+  </data>
+  <data name="EDC (A)" xml:space="preserve">
+    <value>EDC（安）</value>
+  </data>
+  <data name="End Address" xml:space="preserve">
+    <value>结束地址</value>
+  </data>
+  <data name="End Register" xml:space="preserve">
+    <value>结束寄存器</value>
+  </data>
+  <data name="End session and remove owned driver" xml:space="preserve">
+    <value>结束会话并移除自有驱动</value>
+  </data>
+  <data name="Firmware" xml:space="preserve">
+    <value>固件</value>
+  </data>
+  <data name="Freq (OC)" xml:space="preserve">
+    <value>频率（超频）</value>
+  </data>
+  <data name="Frequency" xml:space="preserve">
+    <value>频率</value>
+  </data>
+  <data name="High" xml:space="preserve">
+    <value>高</value>
+  </data>
+  <data name="High T" xml:space="preserve">
+    <value>高温</value>
+  </data>
+  <data name="Info" xml:space="preserve">
+    <value>信息</value>
+  </data>
+  <data name="Initializing hardware..." xml:space="preserve">
+    <value>正在初始化硬件……</value>
+  </data>
+  <data name="Language" xml:space="preserve">
+    <value>语言</value>
+  </data>
+  <data name="Load" xml:space="preserve">
+    <value>加载</value>
+  </data>
+  <data name="Low" xml:space="preserve">
+    <value>低</value>
+  </data>
+  <data name="Low T" xml:space="preserve">
+    <value>低温</value>
+  </data>
+  <data name="MB Model" xml:space="preserve">
+    <value>主板型号</value>
+  </data>
+  <data name="MB Vendor" xml:space="preserve">
+    <value>主板厂商</value>
+  </data>
+  <data name="Mailbox" xml:space="preserve">
+    <value>邮箱</value>
+  </data>
+  <data name="Manual" xml:space="preserve">
+    <value>手动</value>
+  </data>
+  <data name="Manual OC is locked on this CPU." xml:space="preserve">
+    <value>此处理器已锁定手动超频。</value>
+  </data>
+  <data name="Maximum" xml:space="preserve">
+    <value>最高</value>
+  </data>
+  <data name="Medium" xml:space="preserve">
+    <value>中</value>
+  </data>
+  <data name="Medium T" xml:space="preserve">
+    <value>中温</value>
+  </data>
+  <data name="Minimum" xml:space="preserve">
+    <value>最低</value>
+  </data>
+  <data name="Model" xml:space="preserve">
+    <value>型号</value>
+  </data>
+  <data name="Monitor" xml:space="preserve">
+    <value>监视器</value>
+  </data>
+  <data name="No apply results yet." xml:space="preserve">
+    <value>尚无应用结果。</value>
+  </data>
+  <data name="OFF" xml:space="preserve">
+    <value>关闭</value>
+  </data>
+  <data name="ON" xml:space="preserve">
+    <value>开启</value>
+  </data>
+  <data name="Observed" xml:space="preserve">
+    <value>读取值</value>
+  </data>
+  <data name="Outcome" xml:space="preserve">
+    <value>结果</value>
+  </data>
+  <data name="PBO Scalar" xml:space="preserve">
+    <value>PBO 倍率</value>
+  </data>
+  <data name="PCI Register" xml:space="preserve">
+    <value>PCI 寄存器</value>
+  </data>
+  <data name="PMTable" xml:space="preserve">
+    <value>功耗表</value>
+  </data>
+  <data name="PPT (W)" xml:space="preserve">
+    <value>PPT（瓦）</value>
+  </data>
+  <data name="PState ID" xml:space="preserve">
+    <value>性能状态编号</value>
+  </data>
+  <data name="PStates" xml:space="preserve">
+    <value>性能状态</value>
+  </data>
+  <data name="Package" xml:space="preserve">
+    <value>封装</value>
+  </data>
+  <data name="Profile" xml:space="preserve">
+    <value>配置</value>
+  </data>
+  <data name="RSP Address" xml:space="preserve">
+    <value>响应地址</value>
+  </data>
+  <data name="Re-read from CPU" xml:space="preserve">
+    <value>重新读取处理器</value>
+  </data>
+  <data name="Read" xml:space="preserve">
+    <value>读取</value>
+  </data>
+  <data name="ReadCommand" xml:space="preserve">
+    <value>读取命令</value>
+  </data>
+  <data name="ReadRoute" xml:space="preserve">
+    <value>读取通道</value>
+  </data>
+  <data name="ReadStatus" xml:space="preserve">
+    <value>读取状态</value>
+  </data>
+  <data name="ReadbackSource" xml:space="preserve">
+    <value>读取来源</value>
+  </data>
+  <data name="Reason" xml:space="preserve">
+    <value>原因</value>
+  </data>
+  <data name="Refresh" xml:space="preserve">
+    <value>刷新</value>
+  </data>
+  <data name="Requested" xml:space="preserve">
+    <value>请求值</value>
+  </data>
+  <data name="Requested VID" xml:space="preserve">
+    <value>请求的 VID</value>
+  </data>
+  <data name="Reset" xml:space="preserve">
+    <value>重置</value>
+  </data>
+  <data name="Save" xml:space="preserve">
+    <value>保存</value>
+  </data>
+  <data name="Scan" xml:space="preserve">
+    <value>扫描</value>
+  </data>
+  <data name="Send" xml:space="preserve">
+    <value>发送</value>
+  </data>
+  <data name="Set" xml:space="preserve">
+    <value>设置</value>
+  </data>
+  <data name="Setting" xml:space="preserve">
+    <value>设置项</value>
+  </data>
+  <data name="Start" xml:space="preserve">
+    <value>开始</value>
+  </data>
+  <data name="Start Address" xml:space="preserve">
+    <value>起始地址</value>
+  </data>
+  <data name="Start Register" xml:space="preserve">
+    <value>起始寄存器</value>
+  </data>
+  <data name="Startup profile" xml:space="preserve">
+    <value>启动配置</value>
+  </data>
+  <data name="Status" xml:space="preserve">
+    <value>状态</value>
+  </data>
+  <data name="Stop" xml:space="preserve">
+    <value>停止</value>
+  </data>
+  <data name="TDC (A)" xml:space="preserve">
+    <value>TDC（安）</value>
+  </data>
+  <data name="Target" xml:space="preserve">
+    <value>目标</value>
+  </data>
+  <data name="TimeUtc" xml:space="preserve">
+    <value>UTC 时间</value>
+  </data>
+  <data name="Tools" xml:space="preserve">
+    <value>工具</value>
+  </data>
+  <data name="Unit" xml:space="preserve">
+    <value>单位</value>
+  </data>
+  <data name="VID voltage (derived)" xml:space="preserve">
+    <value>VID 电压（计算值）</value>
+  </data>
+  <data name="Value" xml:space="preserve">
+    <value>值</value>
+  </data>
+  <data name="Values" xml:space="preserve">
+    <value>值</value>
+  </data>
+  <data name="View" xml:space="preserve">
+    <value>视图</value>
+  </data>
+  <data name="Write" xml:space="preserve">
+    <value>写入</value>
+  </data>
+  <data name="Write VID" xml:space="preserve">
+    <value>写入 VID</value>
+  </data>
+  <data name="WriteCommand" xml:space="preserve">
+    <value>写入命令</value>
+  </data>
+  <data name="WriteRoute" xml:space="preserve">
+    <value>写入通道</value>
+  </data>
+  <data name="WriteStatus" xml:space="preserve">
+    <value>写入状态</value>
+  </data>
+  <data name="X3D Turbo Mode" xml:space="preserve">
+    <value>X3D 加速模式</value>
+  </data>
+  <data name="Review profile core targets" xml:space="preserve">
+    <value>检查配置核心目标</value>
+  </data>
+  <data name="Load reviewed bindings" xml:space="preserve">
+    <value>加载已检查的绑定</value>
+  </data>
+  <data name="SavedSlot" xml:space="preserve">
+    <value>保存的槽位</value>
+  </data>
+  <data name="SavedIdentity" xml:space="preserve">
+    <value>保存的物理核心</value>
+  </data>
+  <data name="CurrentIdentity" xml:space="preserve">
+    <value>当前物理核心</value>
+  </data>
+  <data name="CurrentSlot" xml:space="preserve">
+    <value>当前槽位</value>
+  </data>
+  <data name="Resolution" xml:space="preserve">
+    <value>匹配结果</value>
+  </data>
+  <data name="PhysicalTarget" xml:space="preserve">
+    <value>物理目标</value>
+  </data>
+  <data name="Margin" xml:space="preserve">
+    <value>偏移量</value>
+  </data>
+</root>

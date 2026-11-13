@@ -5,6 +5,7 @@ namespace ZenStatesDebugTool
     // Persisted UI preferences (see UiSettingsManager). Plain POCO so it serializes cleanly.
     public class UiSettings
     {
+        public string Language { get; set; } = "en";
         // Keys (TabPage.Name) of tabs the user has hidden. Storing *hidden* rather than
         // *visible* means tabs added in future versions default to visible.
         public HashSet<string> HiddenTabs { get; set; } = new HashSet<string>();

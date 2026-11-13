@@ -1,5 +1,7 @@
 using System;
 using ZenStates.Core;
+using ZenStates.Core.Hardware;
+using ZenStates.Core.Hardware.Smu;
 
 namespace ZenStatesDebugTool
 {
@@ -36,15 +38,17 @@ namespace ZenStatesDebugTool
         }
     }
 
-    public sealed class ZenStatesTuningTransport : ITuningTransport
+    public sealed class ZenStatesTuningTransport : ITuningTransport, IProfilePreflight
     {
         private readonly Cpu cpu;
         private readonly TuningCommands commands;
+        private readonly TopologySnapshot topology;
         private readonly uint[] coreDisableMap;
         private readonly bool isApu, curveShaperSupported;
         public ZenStatesTuningTransport(Cpu cpu)
         {
             this.cpu = cpu ?? throw new ArgumentNullException(nameof(cpu));
+            topology = CoreLibraryAdapter.Topology(cpu);
             coreDisableMap = cpu.info.topology.coreDisableMap == null ? null : (uint[])cpu.info.topology.coreDisableMap.Clone();
             isApu = cpu.smu.SMU_TYPE >= SMU.SmuType.TYPE_APU0 && cpu.smu.SMU_TYPE <= SMU.SmuType.TYPE_APU2;
             curveShaperSupported = cpu.smu.Rsmu.SMU_MSG_SetCurveShaperMargin != 0;
@@ -59,13 +63,14 @@ namespace ZenStatesDebugTool
                 ApuFmaxArgument = cpu.smu.SMU_TYPE == SMU.SmuType.TYPE_APU0
             };
         }
+        public string ValidateProfile(Profiles.Profile profile) => topology.Validate(profile);
         public bool IsSupported(TuningRequest r, out string reason)
         {
             reason = "Command not defined by the bundled core library; skipped.";
             switch (r.Kind)
             {
                 case TuningKind.CurveOptimizer:
-                    if (!CoreTopology.IsCoreEnabled(coreDisableMap, r.Index)) { reason = "Core disabled or absent; skipped."; return false; }
+                    if (topology.Find(r.Index) == null) { reason = topology.Error ?? "Core disabled or absent; skipped."; return false; }
                     // The bundled setter masks off flat APU core indices. Do not guess a new mapping.
                     if (isApu) { reason = "Per-core APU addressing is unvalidated in the bundled setter; skipped."; return false; }
                     return commands.CoMp1 != 0 || commands.CoRsmu != 0;
@@ -77,7 +82,11 @@ namespace ZenStatesDebugTool
         public TuningReply Write(TuningRequest r)
         {
             if (r.Kind == TuningKind.CurveOptimizer || r.Kind == TuningKind.Fmax)
-                return commands.Execute(r, false, CoreTopology.EncodeCoreMarginBitmask(false, r.Index), Send);
+            {
+                var reply = commands.Execute(r, false, topology.Find(r.Index)?.Mask ?? 0, Send);
+                if (reply != null && r.Kind == TuningKind.CurveOptimizer) reply.TargetIdentity = topology.Find(r.Index)?.Identity;
+                return reply;
+            }
             SMU.Status status;
             switch (r.Kind)
             {
@@ -90,7 +99,7 @@ namespace ZenStatesDebugTool
             }
             return new TuningReply { Status = (uint)status, Route = "CPU API" };
         }
-        public TuningReply Read(TuningRequest r) => commands.Execute(r, true, CoreTopology.EncodeCoreMarginBitmask(false, r.Index), Send);
+        public TuningReply Read(TuningRequest r) => commands.Execute(r, true, topology.Find(r.Index)?.Mask ?? 0, Send);
         private TuningReply Send(string route, uint command, uint[] args)
         {
             var original = args;

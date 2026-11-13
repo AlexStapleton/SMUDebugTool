@@ -27,6 +27,7 @@ namespace ZenStatesDebugTool
         public string Route { get; set; }
         public uint? Command { get; set; }
         public uint? TargetMask { get; set; }
+        public string TargetIdentity { get; set; }
         public bool Direct { get; set; }
         public string Source => !Value.HasValue ? "unavailable" : Direct ? "direct" : "derived";
     }
@@ -71,7 +72,7 @@ namespace ZenStatesDebugTool
         private static string Reply(TuningReply reply)
         {
             if (reply == null) return "unavailable";
-            return $"{reply.Route ?? "CPU API"} cmd={Hex(reply.Command)} target={Hex(reply.TargetMask)} status={Hex(reply.Status)} ({StatusText(reply.Status)})";
+            return $"{reply.Route ?? "CPU API"} cmd={Hex(reply.Command)} target={Hex(reply.TargetMask)} {reply.TargetIdentity} status={Hex(reply.Status)} ({StatusText(reply.Status)})";
         }
         private static string Hex(uint? value) => value.HasValue ? $"0x{value.Value:X2}" : "unavailable";
         public static string StatusText(uint? status)

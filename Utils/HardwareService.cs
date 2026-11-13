@@ -4,6 +4,8 @@ using System.Reflection;
 using System.Runtime.ExceptionServices;
 using System.Threading;
 using ZenStates.Core;
+using ZenStates.Core.Hardware;
+using ZenStates.Core.Hardware.Smu;
 
 namespace ZenStatesDebugTool
 {
@@ -31,19 +33,16 @@ namespace ZenStatesDebugTool
     public sealed class HardwareService
     {
         private readonly Cpu cpu;
-        private readonly AmdFamily17 pstateDriver;
+        public TopologySnapshot Topology { get; }
 
         public HardwareService(Cpu cpu)
         {
             this.cpu = cpu;
-            // Cpu.WriteMsr broadcasts one value to every logical processor. Bind the
-            // existing single-processor driver so a frequency edit preserves each
-            // target's own VID/reserved bits. Fail closed if a future DLL changes it.
-            pstateDriver = typeof(Cpu).GetField("_pawnAmd", BindingFlags.Instance | BindingFlags.NonPublic)
-                ?.GetValue(cpu) as AmdFamily17;
+            Topology = CoreLibraryAdapter.Topology(cpu);
+
         }
 
-        public bool CanWritePStates => pstateDriver != null && Environment.Is64BitProcess;
+        public bool CanWritePStates => cpu.CanAccessCurrentProcessorMsr && Environment.Is64BitProcess;
 
         public MsrReadResult ReadPState(int stateId)
         {
@@ -77,7 +76,7 @@ namespace ZenStatesDebugTool
                     try
                     {
                         return PStateFrequencyWriter.Apply(ProcessorAffinity.GetActiveTargets(), new ProcessorAffinity(), stateId,
-                            layout, fid, did, ReadPStateRegister, (address, value) => pstateDriver.WriteMsr(address, value),
+                            layout, fid, did, ReadPStateRegister, (address, value) => cpu.TryWriteCurrentProcessorMsr(address, value),
                             PreparePStateWrite);
                     }
                     catch (Exception ex)
@@ -109,7 +108,14 @@ namespace ZenStatesDebugTool
 
         private ulong? ReadPStateRegister(uint address)
         {
-            return pstateDriver.ReadMsr(address, out ulong value) ? (ulong?)value : null;
+            Hardware.ThrowIfClosing();
+            return cpu.TryReadCurrentProcessorMsr(address, out ulong value) ? (ulong?)value : null;
+        }
+        public PStateWriteResult WritePStateVid(int stateId, PStateLayout layout, PStateVidEncoding encoding, uint vid)
+        {
+            return OnPStateThread(() => Hardware.Locked(() =>
+                PStateVidWriter.Apply(ProcessorAffinity.GetActiveTargets(), new ProcessorAffinity(), stateId, layout, encoding,
+                    vid, ReadPStateRegister, (address, value) => cpu.TryWriteCurrentProcessorMsr(address, value))));
         }
 
         private bool PreparePStateWrite()
@@ -119,7 +125,7 @@ namespace ZenStatesDebugTool
             const ulong tscFrequencySelect = 1UL << 21;
             ulong? original = ReadPStateRegister(hwcr);
             return original.HasValue && ((original.Value & tscFrequencySelect) != 0
-                || pstateDriver.WriteMsr(hwcr, original.Value | tscFrequencySelect));
+                || cpu.TryWriteCurrentProcessorMsr(hwcr, original.Value | tscFrequencySelect));
         }
 
         public MsrReadResult ReadMsr(uint msr)

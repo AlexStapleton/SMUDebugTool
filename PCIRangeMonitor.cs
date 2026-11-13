@@ -4,6 +4,8 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using ZenStates.Core;
+using ZenStates.Core.Hardware;
+using ZenStates.Core.Hardware.Smu;
 
 namespace ZenStatesDebugTool
 {
@@ -29,6 +31,7 @@ namespace ZenStatesDebugTool
             addresses = AddressRange.MonitorAddresses(startAddress, endAddress);
             CPU = cpu;
             InitializeComponent();
+            UiLayout.Configure(this, new System.Drawing.Size(500, 300));
             dataGridViewPCIRange.DataSource = list;
             RefreshTimer.Interval = 500;
             RefreshTimer.Tick += RefreshTimer_Tick;
