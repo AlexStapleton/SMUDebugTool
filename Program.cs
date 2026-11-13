@@ -86,9 +86,8 @@ namespace ZenStatesDebugTool
 
                 cpu = new Cpu();
                 var result = new ProfileApplier().Apply(profile, cpu);
-                Log(logPath, $"Applied '{profileName}'. Success={result.Success}. "
-                    + string.Join("; ", result.Messages));
-                return result.Success ? 0 : 1;
+                Log(logPath, TuningResultFormatter.LogLine(profileName, result));
+                return result.ExitCode;
             }
             catch (Exception ex)
             {

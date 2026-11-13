@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using ZenStates.Core;
 
@@ -17,6 +17,7 @@ namespace ZenStatesDebugTool
         {
             if (cpu == null) throw new ArgumentNullException(nameof(cpu));
 
+            if (endAddress < startAddress) throw new ArgumentException("End address precedes start address.");
             const uint Step = 4; // Read DWORDs
             const int BufferSize = 1 << 16; // 64 KB, a multiple of 4
 
@@ -30,8 +31,10 @@ namespace ZenStatesDebugTool
                 byte[] buffer = new byte[BufferSize];
                 int pos = 0;
 
-                for (uint addr = startAddress; ; addr += Step)
+                for (ulong address = startAddress; address <= endAddress; address += Step)
                 {
+                    Hardware.ThrowIfClosing();
+                    uint addr = (uint)address;
                     uint data = 0;
                     bool ok;
 
@@ -42,8 +45,12 @@ namespace ZenStatesDebugTool
                         // freezing for the entire dump; the driver call dwarfs the
                         // uncontended lock cost.
                         lock (Hardware.Sync)
+                        {
+                            Hardware.ThrowIfClosing();
                             ok = cpu.io.GetPhysLong((UIntPtr)addr, out data);
+                        }
                     }
+                    catch (OperationCanceledException) { throw; }
                     catch
                     {
                         ok = false;
@@ -65,10 +72,6 @@ namespace ZenStatesDebugTool
                         pos = 0;
                     }
 
-                    // Break before incrementing past the end to avoid uint overflow when
-                    // endAddress is near 0xFFFFFFFF.
-                    if (addr > endAddress - Step)
-                        break;
                 }
 
                 if (pos > 0)

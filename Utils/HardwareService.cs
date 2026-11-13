@@ -52,6 +52,7 @@ namespace ZenStatesDebugTool
             {
                 lock (Hardware.Sync)
                 {
+                    Hardware.ThrowIfClosing();
                     var targets = ProcessorAffinity.GetActiveTargets();
                     if (targets.Count == 0) throw new InvalidOperationException("No active processors found.");
                     using (new ProcessorAffinity().Pin(targets[0]))
@@ -66,9 +67,13 @@ namespace ZenStatesDebugTool
             {
                 lock (Hardware.Sync)
                 {
+                    Hardware.ThrowIfClosing();
                     if (!CanWritePStates)
-                        return new PStateWriteResult { Status = PStateWriteStatus.OperationFailed,
-                            Error = "Per-processor P-state writes are unavailable with this core library/process." };
+                        return new PStateWriteResult
+                        {
+                            Status = PStateWriteStatus.OperationFailed,
+                            Error = "Per-processor P-state writes are unavailable with this core library/process."
+                        };
                     try
                     {
                         return PStateFrequencyWriter.Apply(ProcessorAffinity.GetActiveTargets(), new ProcessorAffinity(), stateId,
@@ -94,7 +99,8 @@ namespace ZenStatesDebugTool
             {
                 try { result = operation(); }
                 catch (Exception ex) { failure = ex; }
-            }) { IsBackground = true, Name = "PStateIO" };
+            })
+            { IsBackground = true, Name = "PStateIO" };
             worker.Start();
             worker.Join();
             if (failure != null) ExceptionDispatchInfo.Capture(failure).Throw();
@@ -132,16 +138,19 @@ namespace ZenStatesDebugTool
         // Preserves the original scan loop semantics (while msr <= end; msr++).
         public List<MsrReading> ScanMsrRange(uint start, uint end)
         {
+            if (end < start || (ulong)end - start >= 65536) throw new ArgumentException("Scan 1–65536 MSRs at a time.");
             var readings = new List<MsrReading>();
             lock (Hardware.Sync)
             {
-                uint msr = start;
-                while (msr <= end)
+                Hardware.ThrowIfClosing();
+                for (ulong address = start; address <= end; address++)
                 {
+                    Hardware.ThrowIfClosing();
+                    uint msr = (uint)address;
                     uint eax = 0, edx = 0;
                     if (cpu.ReadMsr(msr, ref eax, ref edx))
                         readings.Add(new MsrReading(msr, eax, edx));
-                    msr += 1;
+
                 }
             }
             return readings;
