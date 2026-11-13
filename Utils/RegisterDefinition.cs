@@ -4,12 +4,15 @@ using System.Collections.Generic;
 namespace ZenStatesDebugTool
 {
     public enum RegisterKind { Msr, Pci, Cpuid }
+    public enum PStateVidEncoding { Unknown, Svi2, Svi3 }
 
     // Optional helpers a derived line may need (e.g. generation-aware VID->voltage).
     // Supplied by the caller; when a needed delegate is null the derived line is skipped.
     public sealed class DecodeContext
     {
         public Func<uint, double> VidToVoltage { get; set; }
+        public PStateLayout PStateLayout { get; set; }
+        public PStateVidEncoding PStateVidEncoding { get; set; }
         public static readonly DecodeContext None = new DecodeContext();
     }
 

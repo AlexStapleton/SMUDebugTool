@@ -128,10 +128,6 @@ namespace ZenStatesDebugTool
                 smuInfoLabel.Text = cpu.systemInfo.SmuVersionString;
                 firmwareInfoLabel.Text = $"{cpu.systemInfo.PatchLevel:X8}";
                 cpuIdLabel.Text = $"{cpu.systemInfo.CpuIdString} ({cpu.info.codeName})";
-                decodeContext = new DecodeContext
-                {
-                    VidToVoltage = SmuDecodeAdapter.GetVidToVoltage(cpu.info.codeName)
-                };
                 smuNameMap = SmuCommandNames.Build(SmuDecodeAdapter.ReadMessages(cpu.smu));
                 configInfoLabel.Text = $"{cpu.info.topology.ccds} CCD / {cpu.info.topology.ccxs} CCX / {cpu.systemInfo.PhysicalCoreCount} physical cores";
             }
@@ -161,16 +157,9 @@ namespace ZenStatesDebugTool
             }
 
             InitTestMailbox(cpu.smu.Rsmu);
+            decodeContext = SmuDecodeAdapter.GetDecodeContext(cpu.info);
             DisplaySystemInfo();
-
-            pstateIdBox.SelectedIndex = 0;
-
-            pstateDid.KeyDown += PstateFidDid_KeyDown;
-            pstateDid.KeyPress += PstateFidDid_KeyPress;
-            pstateDid.KeyUp += PstateFidDid_KeyUp;
-            pstateFid.KeyDown += PstateFidDid_KeyDown;
-            pstateFid.KeyPress += PstateFidDid_KeyPress;
-            pstateFid.KeyUp += PstateFidDid_KeyUp;
+            InitPStateEditor();
 
             PopulateMailboxesList(comboBoxMailboxSelect.Items);
 
@@ -277,6 +266,9 @@ namespace ZenStatesDebugTool
             {
                 try
                 {
+                    var pstateItems = GatherPStates();
+                    UiInvoke(() => ApplyPStateList(pstateItems));
+
                     // Reads only (cpu/WMI), no control access — safe off the UI thread.
                     // The SMU/CPU reads are serialized against other threads via
                     // Hardware.Sync; the UI apply happens later (UiInvoke) outside the lock.
@@ -2038,156 +2030,150 @@ namespace ZenStatesDebugTool
             RunBackgroundTask(BackgroundWorkerTrySettings_DoWork, BackgroundWorkerReport_RunWorkerCompleted);
         }
 
-        private bool nonNumberEntered;
+        private int? pstateReadId;
 
-        private void PstateFidDid_KeyDown(object sender, KeyEventArgs e)
+        private sealed class PStateItem
         {
-            nonNumberEntered = false;
+            public int Id { get; }
+            public ulong? Raw { get; }
+            public PStateItem(int id, ulong? raw) { Id = id; Raw = raw; }
+            public override string ToString() => $"P{Id}" + (!Raw.HasValue ? " (unreadable)" :
+                (Raw.Value & (1UL << 63)) == 0 ? " (disabled)" : "");
+        }
 
-            if (e.KeyCode < Keys.D0 || e.KeyCode > Keys.D9)
+        private void InitPStateEditor()
+        {
+            pstateIdBox.Items.Clear();
+            pstateIdBox.DisplayMember = "";
+            pstateIdBox.Enabled = btnPstateRead.Enabled = false;
+            pstateIdBox.SelectedIndexChanged += (s, e) => ResetPStateFields();
+            pstateFid.TextChanged += (s, e) => UpdatePStatePreview();
+            pstateDid.TextChanged += (s, e) => UpdatePStatePreview();
+            if (decodeContext.PStateLayout == PStateLayout.Zen5)
+                label9.Text = "DID (n/a)";
+            ResetPStateFields();
+        }
+
+        private List<PStateItem> GatherPStates()
+        {
+            var items = new List<PStateItem>();
+            for (int id = 0; id < PStateMath.Count; id++)
             {
-                if (e.KeyCode < Keys.NumPad0 || e.KeyCode > Keys.NumPad9)
+                ulong? raw = null;
+                try
                 {
-                    if (e.KeyCode != Keys.Back)
-                    {
-                        nonNumberEntered = true;
-                    }
+                    var read = hardware.ReadPState(id);
+                    if (read.Ok) raw = ((ulong)read.Edx << 32) | read.Eax;
                 }
+                catch { /* Keep failed probes visible and read-only; manual Read can retry. */ }
+                items.Add(new PStateItem(id, raw));
             }
-
-            if (ModifierKeys == Keys.Shift)
-            {
-                nonNumberEntered = true;
-            }
+            return items;
         }
 
-        private void PstateFidDid_KeyPress(object sender, KeyPressEventArgs e)
+        private void ApplyPStateList(List<PStateItem> items)
         {
-            if (nonNumberEntered)
-            {
-                e.Handled = true;
-            }
+            pstateIdBox.Items.Clear();
+            foreach (var item in items) pstateIdBox.Items.Add(item);
+            pstateIdBox.Enabled = btnPstateRead.Enabled = true;
+            if (items.Count > 0) pstateIdBox.SelectedIndex = 0;
         }
 
-        private void PstateFidDid_KeyUp(object sender, KeyEventArgs e)
+        private void ResetPStateFields()
         {
-            // TryParse, not Parse: this runs on every keystroke, and a partial/overlong entry
-            // would otherwise throw straight to the global exception handler.
-            int fid = int.TryParse(pstateFid.Text, out int f) ? f : 0;
-            int did = int.TryParse(pstateDid.Text, out int d) ? d : 1;
-            if (did == 0) did = 1; // avoid divide-by-zero
-            pstateFrequency.Text = PStateMath.FrequencyMhz((uint)fid, (uint)did) + "MHz";
+            pstateReadId = null;
+            pstateFid.ReadOnly = pstateDid.ReadOnly = true;
+            pstateFid.Text = "";
+            pstateDid.Text = decodeContext.PStateLayout == PStateLayout.Zen5 ? "N/A" : "";
+            pstateDid.Enabled = decodeContext.PStateLayout != PStateLayout.Zen5;
+            pstateFrequency.Text = "";
+            btnPstateWrite.Enabled = false;
+        }
+
+        private void UpdatePStatePreview()
+        {
+            bool valid = PStateMath.TryParse(decodeContext.PStateLayout, pstateFid.Text, pstateDid.Text,
+                out uint fid, out uint did, out _);
+            double? mhz = valid ? PStateMath.FrequencyMhz(decodeContext.PStateLayout, fid, did) : null;
+            pstateFrequency.Text = mhz.HasValue ? $"{mhz.Value:0.##} MHz" : "N/A";
+            btnPstateWrite.Enabled = valid && hardware.CanWritePStates
+                && pstateIdBox.SelectedItem is PStateItem item && pstateReadId == item.Id;
         }
 
         private void BtnPstateRead_Click(object sender, EventArgs e)
         {
-            uint eax = default, edx = default;
-            var pstateId = pstateIdBox.SelectedIndex;
-            uint pstateEax = 0, pstateEdx = 0;
-            bool readOk = Hardware.Locked(() => cpu.ReadMsr(Convert.ToUInt32(Convert.ToInt64(0xC0010064) + pstateId), ref pstateEax, ref pstateEdx));
-            eax = pstateEax; edx = pstateEdx;
-            if (!readOk)
+            ResetPStateFields();
+            if (!(pstateIdBox.SelectedItem is PStateItem item)) return;
+            try
             {
-                SetStatusText($@"Error reading PState {pstateId}!");
-                return;
+                var read = hardware.ReadPState(item.Id);
+                if (!read.Ok)
+                {
+                    SetStatusText($"Error reading P-state {item.Id}.");
+                    return;
+                }
+                ulong raw = ((ulong)read.Edx << 32) | read.Eax;
+                PrependResult(RegisterDecoder.Decode(RegisterKind.Msr, PStateMath.BaseMsr + (uint)item.Id, raw, decodeContext));
+                if (decodeContext.PStateLayout == PStateLayout.Unknown)
+                {
+                    SetStatusText("Unknown P-state layout; raw data shown in the log.");
+                    return;
+                }
+                var value = PStateMath.Decode(raw, decodeContext.PStateLayout);
+                pstateFid.Text = value.CpuFid.ToString(CultureInfo.InvariantCulture);
+                if (decodeContext.PStateLayout == PStateLayout.FidDid)
+                    pstateDid.Text = value.CpuDfsId.ToString(CultureInfo.InvariantCulture);
+                pstateFid.ReadOnly = !value.Enabled;
+                pstateDid.ReadOnly = !value.Enabled || decodeContext.PStateLayout != PStateLayout.FidDid;
+                pstateReadId = value.Enabled ? (int?)item.Id : null;
+                UpdatePStatePreview();
+                SetStatusText(!value.Enabled ? $"P-state {item.Id} is disabled (PstateEn=0); read only." :
+                    !hardware.CanWritePStates ? "P-state read; per-processor writes are unavailable with this core library/process." :
+                    $"P-state {item.Id} successfully read.");
             }
-
-            PStateValues pv = PStateMath.Decode(eax);
-
-            pstateDid.Text = Convert.ToString(pv.CpuDfsId, 10);
-            pstateFid.Text = Convert.ToString(pv.CpuFid, 10);
-            pstateFrequency.Text = PStateMath.FrequencyMhz(pv.CpuFid, pv.CpuDfsId) + "MHz";
-
-            SetStatusText($@"PState {pstateId} successfully read.");
-
-            pstateDid.ReadOnly = false;
-            pstateFid.ReadOnly = false;
-            btnPstateWrite.Enabled = true;
+            catch (Exception ex) { SetStatusText($"P-state read failed: {ex.Message}"); }
         }
 
         private void BtnPstateWrite_Click(object sender, EventArgs e)
         {
-            var confirmResult = MessageBox.Show(
-                @"This will change the selected PState and your CPU frequency." +
-                Environment.NewLine +
-                @"Setting a high frequency could crash/damage your system." +
-                Environment.NewLine +
-                @"Do you want to continue?",
-                @"Confirm PState change",
-                MessageBoxButtons.OKCancel
-            );
-
-            if (confirmResult != DialogResult.OK) return;
-
-            if (string.IsNullOrEmpty(pstateDid.Text) || string.IsNullOrEmpty(pstateFid.Text))
+            if (!(pstateIdBox.SelectedItem is PStateItem item) || pstateReadId != item.Id
+                || !hardware.CanWritePStates)
             {
-                MessageBox.Show("Can't write because DID/FID is empty!", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                SetStatusText("Read an enabled P-state before editing its frequency.");
                 return;
             }
-
-            var pstateId = pstateIdBox.SelectedIndex;
-            uint eax = default, edx = default;
-
-            uint readEax = 0, readEdx = 0;
-            bool pstateReadOk = Hardware.Locked(() => cpu.ReadMsr(Convert.ToUInt32(Convert.ToInt64(0xC0010064) + pstateId), ref readEax, ref readEdx));
-            eax = readEax; edx = readEdx;
-            if (!pstateReadOk)
+            if (!PStateMath.TryParse(decodeContext.PStateLayout, pstateFid.Text, pstateDid.Text,
+                out uint fid, out uint did, out string error))
             {
-                SetStatusText($@"Error reading PState {pstateId}!");
+                SetStatusText(error);
                 return;
             }
+            double? mhz = PStateMath.FrequencyMhz(decodeContext.PStateLayout, fid, did);
+            var confirm = MessageBox.Show(
+                $"This will change P-state {item.Id} to {mhz.Value:0.##} MHz on all active processors."
+                + Environment.NewLine + "Setting a high frequency could crash/damage your system."
+                + Environment.NewLine + "Do you want to continue?",
+                "Confirm P-state change", MessageBoxButtons.OKCancel);
+            if (confirm != DialogResult.OK) return;
 
-            PStateValues pv = PStateMath.Decode(eax);
-            eax = PStateMath.Encode(pv.IddDiv, pv.IddVal, pv.CpuVid,
-                uint.Parse(pstateDid.Text), uint.Parse(pstateFid.Text));
-
-            if (_numaUtil.HighestNumaNode > 0)
+            pstateReadId = null;
+            btnPstateWrite.Enabled = false;
+            var result = hardware.WritePStateFrequency(item.Id, decodeContext.PStateLayout, fid, did);
+            if (result.Success)
             {
-                for (var i = 0; i < (int)_numaUtil.HighestNumaNode; i++)
-                {
-                    if (!WritePstateClick(pstateId, eax, edx, i)) return;
-                }
+                BtnPstateRead_Click(sender, e);
+                SetStatusText($"P-state {item.Id}: {mhz.Value:0.##} MHz verified on {result.Completed} processors.");
             }
             else
             {
-                if (!WritePstateClick(pstateId, eax, edx)) return;
+                string target = result.Target != null ? $" at {result.Target}" : "";
+                SetStatusText($"P-state {item.Id}: {result.Status}{target}; "
+                    + $"{result.Completed} processors verified. {result.Error}");
+                if (result.Requested.HasValue)
+                    PrependResult($"Requested MSR: 0x{result.Requested.Value:X16}; readback: "
+                        + (result.Observed.HasValue ? $"0x{result.Observed.Value:X16}" : "unavailable")
+                        + Environment.NewLine);
             }
-
-            SetStatusText($@"Successfully written PState {pstateId}.");
-        }
-
-        // P0 fix C001_0015 HWCR[21]=1
-        // Fixes timer issues when not using HPET
-        public bool ApplyTscWorkaround()
-        {
-            uint eax = 0, edx = 0;
-
-            return Hardware.Locked(() =>
-            {
-                if (cpu.ReadMsr(0xC0010015, ref eax, ref edx))
-                {
-                    eax |= 0x200000;
-                    return cpu.WriteMsr(0xC0010015, eax, edx);
-                }
-
-                SetStatusText($@"Error applying TSC fix!");
-                return false;
-            });
-        }
-
-        private bool WritePstateClick(int pstateId, uint eax, uint edx, int numanode = 0)
-        {
-            if (_numaUtil.HighestNumaNode > 0) _numaUtil.SetThreadProcessorAffinity((ushort)(numanode + 1), Enumerable.Range(0, Environment.ProcessorCount).ToArray());
-
-            if (!ApplyTscWorkaround()) return false;
-
-            if (!Hardware.Locked(() => cpu.WriteMsr(Convert.ToUInt32(Convert.ToInt64(0xC0010064) + pstateId), eax, edx)))
-            {
-                SetStatusText($@"Error writing PState {pstateId}!");
-                return false;
-            }
-
-            return true;
         }
 
         private void PciScan_DoWork(object sender, DoWorkEventArgs e)

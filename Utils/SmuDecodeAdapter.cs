@@ -10,6 +10,24 @@ namespace ZenStatesDebugTool
     // live here so the core stays hardware-free and unit-testable.
     public static class SmuDecodeAdapter
     {
+        public static DecodeContext GetDecodeContext(CPUInfo info)
+        {
+            var encoding = PStateVidEncoding.Unknown;
+            if (IsSvi3(info.codeName))
+                encoding = PStateVidEncoding.Svi3;
+            else if ((uint)info.family == 0x17 || info.codeName == CodeName.Vermeer
+                || info.codeName == CodeName.Cezanne || info.codeName == CodeName.Milan
+                || info.codeName == CodeName.Chagall)
+                encoding = PStateVidEncoding.Svi2;
+
+            return new DecodeContext
+            {
+                PStateLayout = PStateMath.LayoutForFamily((uint)info.family),
+                PStateVidEncoding = encoding,
+                VidToVoltage = encoding == PStateVidEncoding.Unknown ? null : GetVidToVoltage(info.codeName)
+            };
+        }
+
         // Reads every SMU_MSG_* uint property from the three mailboxes.
         public static IEnumerable<KeyValuePair<string, uint>> ReadMessages(SMU smu)
         {
