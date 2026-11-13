@@ -38,7 +38,12 @@ namespace ProfileCore.Tests
                         Assert.Equal(1, table.GetRow(panel));
                         Assert.Same(panel, log.Parent);
                         Assert.Equal("Existing log", log.Text);
-                        Assert.True(log.Height > 0); Assert.True(log.Top >= 46);
+                        Assert.True(log.Height > 0);
+                        var bar = panel.Controls.OfType<Panel>().Single();
+                        bar.PerformLayout();
+                        Assert.Equal(26, bar.Height);
+                        Assert.True(log.Top >= bar.Bottom);
+                        Assert.True(bar.Controls.OfType<Button>().Single().Height <= 26);
                         var result = new TuningResult();
                         result.Rows.Add(new TuningRow
                         {
