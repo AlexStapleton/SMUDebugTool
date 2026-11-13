@@ -19,6 +19,17 @@ namespace ZenStatesDebugTool
         public static bool TryGet(RegisterKind kind, uint address, out RegisterDefinition def)
             => Map.TryGetValue((kind, address), out def);
 
+        public static bool TryGet(RegisterKind kind, uint address, DecodeContext context, out RegisterDefinition def)
+        {
+            if (kind == RegisterKind.Msr && address >= PStateMath.BaseMsr
+                && address < PStateMath.BaseMsr + PStateMath.Count)
+            {
+                def = PStateDefinition(address, context ?? DecodeContext.None);
+                return true;
+            }
+            return TryGet(kind, address, out def);
+        }
+
         // Used by the population helpers in later tasks.
         internal static void Add(RegisterDefinition def) => Map[(def.Kind, def.Address)] = def;
 
@@ -26,27 +37,33 @@ namespace ZenStatesDebugTool
 
         private static void AddPStateDefs()
         {
-            for (uint i = 0; i < 8; i++)
+            for (uint i = 0; i < PStateMath.Count; i++)
+                Add(PStateDefinition(PStateDef0 + i, DecodeContext.None));
+        }
+
+        private static RegisterDefinition PStateDefinition(uint address, DecodeContext ctx)
+        {
+            var fields = new List<FieldDefinition>();
+            if (PStateMath.FrequencyMask(ctx.PStateLayout) != 0)
             {
-                uint addr = PStateDef0 + i;
-                Add(new RegisterDefinition(
-                    RegisterKind.Msr, addr,
-                    $"PStateDef{i}", $"P-State {i} definition",
-                    new List<FieldDefinition>
-                    {
-                        new FieldDefinition("CpuFid", 7, 0),
-                        new FieldDefinition("CpuDfsId", 13, 8),
-                        new FieldDefinition("CpuVid", 21, 14),
-                        new FieldDefinition("IddValue", 29, 22),
-                        new FieldDefinition("IddDiv", 31, 30),
-                        new FieldDefinition("PstateEn", 63, 63),
-                    },
-                    new List<Func<ulong, DecodeContext, string>>
-                    {
-                        Frequency,
-                        Voltage,
-                    }));
+                fields.Add(new FieldDefinition("CpuFid", ctx.PStateLayout == PStateLayout.Zen5 ? 11 : 7, 0));
+                if (ctx.PStateLayout == PStateLayout.FidDid)
+                    fields.Add(new FieldDefinition("CpuDfsId", 13, 8));
+                fields.Add(new FieldDefinition("CpuVid", 21, 14));
+                if (ctx.PStateVidEncoding == PStateVidEncoding.Svi3)
+                    fields.Add(new FieldDefinition("CpuVidHigh", 32, 32));
+                fields.Add(new FieldDefinition("IddValue", 29, 22));
+                fields.Add(new FieldDefinition("IddDiv", 31, 30));
+                fields.Add(new FieldDefinition("PstateEn", 63, 63));
             }
+            uint id = address - PStateDef0;
+            return new RegisterDefinition(RegisterKind.Msr, address, $"PStateDef{id}",
+                $"P-State {id} definition", fields,
+                new List<Func<ulong, DecodeContext, string>>
+                {
+                    (raw, context) => $"Raw: 0x{raw:X16}",
+                    Frequency, Voltage
+                });
         }
 
         private static void AddMiscMsrs()
@@ -101,17 +118,18 @@ namespace ZenStatesDebugTool
 
         private static string Frequency(ulong value, DecodeContext ctx)
         {
-            uint fid = (uint)RegisterDecoder.Extract(value, 7, 0);
-            uint did = (uint)RegisterDecoder.Extract(value, 13, 8);
-            if (did == 0) return null; // avoid divide-by-zero; nothing to show
-            double mhz = (fid * 25.0 / (did * 12.5)) * 100.0;
-            return $"Frequency: {mhz:0} MHz";
+            var decoded = PStateMath.Decode(value, ctx.PStateLayout);
+            double? mhz = PStateMath.FrequencyMhz(ctx.PStateLayout, decoded.CpuFid, decoded.CpuDfsId);
+            return mhz.HasValue ? $"Frequency: {mhz.Value:0.##} MHz" : null;
         }
 
         private static string Voltage(ulong value, DecodeContext ctx)
         {
-            if (ctx?.VidToVoltage == null) return null;
-            uint vid = (uint)RegisterDecoder.Extract(value, 21, 14);
+            if (ctx.VidToVoltage == null || ctx.PStateVidEncoding == PStateVidEncoding.Unknown
+                || PStateMath.FrequencyMask(ctx.PStateLayout) == 0) return null;
+            uint vid = (uint)(value >> 14 & 0xFF);
+            if (ctx.PStateVidEncoding == PStateVidEncoding.Svi3)
+                vid |= (uint)(value >> 32 & 1) << 8;
             return $"Voltage: {ctx.VidToVoltage(vid):0.000} V";
         }
     }

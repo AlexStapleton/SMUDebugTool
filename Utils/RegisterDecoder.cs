@@ -22,10 +22,10 @@ namespace ZenStatesDebugTool
         // or "" when the register is unknown. Never throws.
         public static string Decode(RegisterKind kind, uint address, ulong value, DecodeContext context = null)
         {
-            if (!RegisterCatalog.TryGet(kind, address, out RegisterDefinition def))
+            DecodeContext ctx = context ?? DecodeContext.None;
+            if (!RegisterCatalog.TryGet(kind, address, ctx, out RegisterDefinition def))
                 return "";
 
-            DecodeContext ctx = context ?? DecodeContext.None;
             var sb = new StringBuilder();
             sb.AppendLine($"{def.Name} (0x{address:X8}) - {def.Description}");
 

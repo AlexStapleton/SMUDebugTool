@@ -36,7 +36,8 @@ namespace ProfileCore.Tests
         private const ulong SamplePStateDef = (0x80000000UL << 32) | 0x000A08A8UL;
 
         private static readonly DecodeContext Svi2Ctx =
-            new DecodeContext { VidToVoltage = v => 1.55 - 0.00625 * v };
+            new DecodeContext { PStateLayout = PStateLayout.FidDid,
+                PStateVidEncoding = PStateVidEncoding.Svi2, VidToVoltage = v => 1.55 - 0.00625 * v };
 
         [Fact]
         public void Decode_pstatedef_shows_name_fields_and_derived_values()
@@ -55,7 +56,8 @@ namespace ProfileCore.Tests
         [Fact]
         public void Decode_pstatedef_skips_voltage_when_no_context_helper()
         {
-            string s = RegisterDecoder.Decode(RegisterKind.Msr, 0xC0010064, SamplePStateDef);
+            string s = RegisterDecoder.Decode(RegisterKind.Msr, 0xC0010064, SamplePStateDef,
+                new DecodeContext { PStateLayout = PStateLayout.FidDid });
             Assert.Contains("-> Frequency: 4200 MHz", s);
             Assert.DoesNotContain("Voltage:", s);
         }
@@ -66,6 +68,31 @@ namespace ProfileCore.Tests
             // 0xC001006B is PStateDef7.
             string s = RegisterDecoder.Decode(RegisterKind.Msr, 0xC001006B, SamplePStateDef, Svi2Ctx);
             Assert.Contains("PStateDef7 (0xC001006B)", s);
+        }
+
+        [Fact]
+        public void Zen5_decode_has_wide_fid_no_divider_and_full_svi3_vid()
+        {
+            uint receivedVid = 0;
+            var context = new DecodeContext { PStateLayout = PStateLayout.Zen5,
+                PStateVidEncoding = PStateVidEncoding.Svi3,
+                VidToVoltage = vid => { receivedVid = vid; return 1.2; } };
+            string text = RegisterDecoder.Decode(RegisterKind.Msr, 0xC001006B, 0x80000001000A33E8UL, context);
+            Assert.Contains("CpuFid [11:0] = 0x3E8 (1000)", text);
+            Assert.Contains("Frequency: 5000 MHz", text);
+            Assert.Contains("CpuVidHigh [32]", text);
+            Assert.DoesNotContain("CpuDfsId", text);
+            Assert.Equal(296u, receivedVid);
+        }
+
+        [Fact]
+        public void Missing_context_preserves_raw_data_without_guessing_a_layout()
+        {
+            string text = RegisterDecoder.Decode(RegisterKind.Msr, 0xC0010064, SamplePStateDef);
+            Assert.Contains("Raw: 0x80000000000A08A8", text);
+            Assert.DoesNotContain("CpuFid", text);
+            Assert.DoesNotContain("Frequency:", text);
+            Assert.DoesNotContain("Voltage:", text);
         }
 
         [Fact]
