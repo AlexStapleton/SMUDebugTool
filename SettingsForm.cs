@@ -12,6 +12,7 @@ using System.Management;
 using System.Reflection;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using ZenStates.Core;
 using ZenStatesDebugTool.Profiles;
@@ -62,7 +63,7 @@ namespace ZenStatesDebugTool
             try
             {
                 profilesPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, profilesFolderName);
-                defaultsPath =  Path.Combine(profilesPath, filename);
+                defaultsPath = Path.Combine(profilesPath, filename);
 
                 profileManager = new ProfileManager(profilesPath);
                 profileManager.EnsureDirectory();
@@ -72,24 +73,76 @@ namespace ZenStatesDebugTool
                 hardware = new HardwareService(cpu);
 
                 InitForm();
+                InitApplyResultsUi();
                 ShowLastStartupApplyResult();
             }
             catch (Exception ex)
             {
                 MessageBox.Show(ex.Message, Resources.Error);
-                Dispose();
-                ExitApplication();
+                // Startup workers have not been launched until OnShown.
+                cpu?.Dispose();
+                shutdownComplete = true;
+                Shown += (sender, args) => Close();
             }
         }
 
-        private void ExitApplication()
-        {
-            cpu?.Dispose();
+        private void ExitApplication() { Close(); }
 
-            if (Application.MessageLoop)
-                Application.Exit();
-            else
-                Environment.Exit(1);
+        private bool shutdownComplete;
+        private bool shuttingDown;
+        private bool hardwareOperation;
+        private readonly HardwareOperationRunner operationRunner = new HardwareOperationRunner();
+        private TuningResultsPanel applyResultsPanel;
+
+        protected override async void OnFormClosing(FormClosingEventArgs e)
+        {
+            base.OnFormClosing(e);
+            if (shutdownComplete) return;
+            e.Cancel = true;
+            if (shuttingDown) return;
+            shuttingDown = true;
+            tabControl1.Enabled = false;
+            foreach (Form owned in OwnedForms) owned.Close();
+            SetStatusText("Waiting for the current hardware command to finish...");
+            try { await Hardware.ShutdownAsync(() => cpu?.Dispose()); }
+            catch (Exception ex) { PrependResult("Driver shutdown: " + ex.Message + Environment.NewLine); }
+            shutdownComplete = true;
+            Close();
+        }
+
+        private void InitApplyResultsUi()
+        {
+            applyResultsPanel = TuningResultsPanel.Attach(textBoxResult);
+        }
+
+        private async Task<T> RunHardwareAsync<T>(Func<T> action)
+        {
+            if (hardwareOperation || (backgroundWorker1?.IsBusy ?? false))
+                throw new InvalidOperationException("Another hardware operation is running.");
+            Hardware.ThrowIfClosing();
+            hardwareOperation = true;
+            bool wasEnabled = tabControl1.Enabled;
+            tabControl1.Enabled = false;
+            try { return await operationRunner.RunAsync(() => { Hardware.ThrowIfClosing(); return action(); }); }
+            finally { hardwareOperation = false; if (!shuttingDown && !IsDisposed) tabControl1.Enabled = wasEnabled; }
+        }
+
+        private async Task ApplyTuningAsync(Profile profile)
+        {
+            if (!_hardwareReady || shuttingDown) { SetStatusText("Hardware is still loading or closing."); return; }
+            try
+            {
+                SetStatusText("Applying settings...");
+                var result = await RunHardwareAsync(() => profileApplier.Apply(profile, cpu, Hardware.ClosingToken));
+                if (shuttingDown || IsDisposed) return;
+                applyResultsPanel.ShowResult(result);
+                SetStatusText(result.Summary);
+                PrependResult(TuningResultFormatter.Report(result) + Environment.NewLine);
+                // Retain only tiers whose own write was accepted, even in a partially failed batch.
+                _lastAppliedCurveShaper = CurveShaperCodec.MergeAccepted(_lastAppliedCurveShaper, result);
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { if (!shuttingDown) HandleError(ex.Message); }
         }
 
         private void InitTestMailbox(uint msgAddr, uint rspAddr, uint argAddr)
@@ -182,11 +235,6 @@ namespace ZenStatesDebugTool
             if (!_curveShaperSupported)
                 tabControl1.TabPages.Remove(tabPageCS);
 
-            // Must run before the background hardware load (OnShown) so the Curve Shaper grid
-            // can fall back to the startup-applied values on CPUs that don't report them back.
-            if (_curveShaperSupported)
-                SeedCurveShaperFromStartupProfile();
-
             comboBoxMailboxSelect.SelectedIndex = 0;
 
             ToolTip toolTip = new ToolTip();
@@ -245,7 +293,7 @@ namespace ZenStatesDebugTool
             tabController.ApplyInitial();
         }
 
-        // The window is shown before any SMU reads happen; once it's visible (handle
+        // The window is shown before the deferred SMU refreshes; once it's visible (handle
         // created, so Invoke works) we kick off a one-time background load that gathers all
         // the slow hardware/WMI values off the UI thread and applies them in one marshal.
         private bool _hardwareLoaded;
@@ -255,7 +303,7 @@ namespace ZenStatesDebugTool
         protected override void OnShown(EventArgs e)
         {
             base.OnShown(e);
-            if (_hardwareLoaded || cpu == null) return;
+            if (_hardwareLoaded || cpu == null || shutdownComplete || shuttingDown) return;
             _hardwareLoaded = true;
             StartHardwareLoad();
         }
@@ -266,6 +314,8 @@ namespace ZenStatesDebugTool
             {
                 try
                 {
+                    bool manualOc = Hardware.Locked(() => cpu.smu.Rsmu.SMU_MSG_IsOverclockable == 0
+                        || cpu.GetOverclockingCaps()[OcCapabilities.OverclockingEnabled]);
                     var pstateItems = GatherPStates();
                     UiInvoke(() => ApplyPStateList(pstateItems));
 
@@ -279,6 +329,7 @@ namespace ZenStatesDebugTool
                     bool? prochot;
                     lock (Hardware.Sync)
                     {
+                        Hardware.ThrowIfClosing();
                         coMargins = GatherCoMargins();
                         // 0 on unsupported CPUs (skipped below); GetFMax has no working
                         // read-back there anyway.
@@ -295,6 +346,13 @@ namespace ZenStatesDebugTool
                     {
                         try
                         {
+                            _manualOcSupported = manualOc;
+                            var ocTab = tabControl1.TabPages.Cast<TabPage>().FirstOrDefault(t => t.Name == "tabPageFreqOC");
+                            if (!manualOc && ocTab != null)
+                            {
+                                ocTab.Controls.Clear();
+                                BuildManualOcLockedTab(ocTab);
+                            }
                             ApplyCoMargins(coMargins);
                             if (_fmaxSupported)
                                 ApplyFMax(fmax);
@@ -327,7 +385,7 @@ namespace ZenStatesDebugTool
         // Marshals an action onto the UI thread, tolerating a form that's closing.
         private void UiInvoke(MethodInvoker action)
         {
-            if (!IsHandleCreated || IsDisposed) return;
+            if (!IsHandleCreated || IsDisposed || shuttingDown) return;
             try { BeginInvoke(action); }
             catch (ObjectDisposedException) { }
             catch (InvalidOperationException) { }
@@ -449,49 +507,6 @@ namespace ZenStatesDebugTool
         // button are disabled and the read-back is skipped.
         private bool _fmaxSupported;
 
-        // Synchronous read+apply, used by the Refresh button (UI thread).
-        private void InitCS(bool showStatus = false)
-        {
-            // Defensive: the tab is removed on unsupported CPUs, so this shouldn't be
-            // reachable there - but never send the command anyway.
-            if (!_curveShaperSupported)
-            {
-                if (showStatus) SetStatusText("Curve Shaper is not supported on this CPU.");
-                return;
-            }
-
-            uint[] hw = Hardware.Locked(() => cpu.GetAllCurveShaperMargins());
-
-            // No working read-back on this CPU (all zeros): show what we last applied this
-            // session (or seeded from the startup profile) rather than blanking the values
-            // the user actually set.
-            uint[] shown = CurveShaperCodec.ResolveDisplay(hw, _lastAppliedCurveShaper);
-            bool usedFallback = !ReferenceEquals(shown, hw);
-
-            ApplyCurveShaperValues(shown, showStatus && !usedFallback);
-            if (showStatus && usedFallback)
-                SetStatusText("Curve Shaper margins refreshed (showing last applied; this CPU does not report them back).");
-        }
-
-        // On CPUs that don't report Curve Shaper margins back, a freshly launched GUI can't
-        // read what the headless logon task applied at boot (that ran in a separate process,
-        // so the in-session _lastAppliedCurveShaper starts empty). Seed it from the configured
-        // startup profile when the startup task is registered, so the grid and Refresh show the
-        // applied values instead of 0. Best-effort: never block startup on it.
-        private void SeedCurveShaperFromStartupProfile()
-        {
-            try
-            {
-                if (!StartupTaskService.Exists()) return;
-                string name = StartupTaskService.GetProfileName();
-                if (string.IsNullOrEmpty(name) || !ProfileManager.IsValidName(name)) return;
-                Profile profile = profileManager.Load(name);
-                if (profile == null) return;
-                _lastAppliedCurveShaper = CurveShaperCodec.PackProfileTiers(profile.CurveShaperTiers);
-            }
-            catch { /* seeding is best-effort */ }
-        }
-
         // Apply-only half (UI thread); the read is done by the caller so the startup path
         // can gather it on a background thread. Each tier word packs low/med/high in bits
         // 8/16/24.
@@ -512,47 +527,18 @@ namespace ZenStatesDebugTool
                 SetStatusText("Curve Shaper margins refreshed.");
         }
 
-        // Full synchronous refresh, used by the CO Refresh/Apply buttons (UI thread).
-        private void InitPBO()
-        {
-            RefreshCoMarginsFromHardware();
-            InitStartupProfileUi();
-            if (_fmaxSupported)
-                SetFmaxFromReadback(Hardware.Locked(() => cpu.GetFMax()));
-        }
-
-        // Per-core CO margin read + apply, on the UI thread (button path).
-        private void RefreshCoMarginsFromHardware()
-        {
-            if (cpu.smu.Rsmu.SMU_MSG_SetDldoPsmMargin == 0)
-                return;
-
-            uint cores = (uint)GetPhysicalCoreCount();
-            for (var i = 0; i < cores; i++)
-            {
-                if (!IsCoreEnabled((int)i))
-                    continue;
-                NumericUpDown control = GetCOControl((int)i);
-                if (control == null)
-                    continue;
-                control.Enabled = true;
-                uint? margin = Hardware.Locked(() => cpu.GetPsmMarginSingleCore(EncodeCoreMarginBitmask((int)i)));
-                if (margin != null)
-                    control.Value = Convert.ToDecimal((int)margin);
-            }
-        }
-
         // Background-safe: reads CO margins for enabled cores into a dictionary, no control
         // access. Returns an empty dictionary when CO isn't supported.
         private Dictionary<int, int> GatherCoMargins()
         {
             var result = new Dictionary<int, int>();
-            if (cpu.smu.Rsmu.SMU_MSG_SetDldoPsmMargin == 0)
+            if ((cpu.smu.Rsmu.SMU_MSG_SetDldoPsmMargin == 0 && cpu.smu.Mp1Smu.SMU_MSG_SetDldoPsmMargin == 0))
                 return result;
 
             int cores = GetPhysicalCoreCount();
             for (int i = 0; i < cores; i++)
             {
+                Hardware.ThrowIfClosing();
                 if (!IsCoreEnabled(i))
                     continue;
                 uint? margin = cpu.GetPsmMarginSingleCore(EncodeCoreMarginBitmask(i));
@@ -565,7 +551,7 @@ namespace ZenStatesDebugTool
         // UI thread: enable the CO spinners for enabled cores and apply the gathered values.
         private void ApplyCoMargins(Dictionary<int, int> margins)
         {
-            if (cpu.smu.Rsmu.SMU_MSG_SetDldoPsmMargin == 0)
+            if ((cpu.smu.Rsmu.SMU_MSG_SetDldoPsmMargin == 0 && cpu.smu.Mp1Smu.SMU_MSG_SetDldoPsmMargin == 0))
                 return;
 
             int cores = GetPhysicalCoreCount();
@@ -683,9 +669,9 @@ namespace ZenStatesDebugTool
             buttonRow.Controls.Add(MakeBarButton("Apply", ButtonApplyProfile_Click));
             buttonRow.Controls.Add(MakeBarButton("Delete", ButtonDeleteProfile_Click));
 
-            numericUpDownPpt       = MakeLimitBox(0, 1000);
-            numericUpDownTdc       = MakeLimitBox(0, 1000);
-            numericUpDownEdc       = MakeLimitBox(0, 1000);
+            numericUpDownPpt = MakeLimitBox(0, 1000);
+            numericUpDownTdc = MakeLimitBox(0, 1000);
+            numericUpDownEdc = MakeLimitBox(0, 1000);
             numericUpDownPboScalar = MakeLimitBox(0, 10);
 
             int r = 0;
@@ -872,39 +858,9 @@ namespace ZenStatesDebugTool
             LoadProfileIntoForm(name);
         }
 
-        private void ButtonApplyProfile_Click(object sender, EventArgs e)
+        private async void ButtonApplyProfile_Click(object sender, EventArgs e)
         {
-            try
-            {
-                // Apply exactly what's on screen, not the last-saved file, so edits to
-                // PPT/TDC/EDC/CO/etc. take effect without needing a Save first. Selecting a
-                // profile in the dropdown loads it into these fields (LoadProfileIntoForm),
-                // so saved profiles still apply via the same path.
-                var name = CurrentProfileName;
-                var profile = GatherProfileFromUi(name);
-
-                // One lock covers every hardware write the applier performs (it does no UI
-                // Invoke), serializing it against monitors and other readers.
-                var result = Hardware.Locked(() => profileApplier.Apply(profile, cpu));
-
-                // Remember the Curve Shaper margins we just applied so the CS tab keeps showing
-                // them - including through a Refresh - on CPUs that don't report them back
-                // (GetAllCurveShaperMargins returns 0 there). The grid already holds these
-                // values, since the apply gathered them from it.
-                _lastAppliedCurveShaper = CurveShaperCodec.PackProfileTiers(profile.CurveShaperTiers);
-
-                string label = string.IsNullOrEmpty(name) ? "Current settings" : $"Profile '{name}'";
-                SetStatusText(result.Success ? $"{label} applied." : $"{label} applied with errors.");
-
-                // Per-limit / per-step outcomes so an accepted-but-ineffective limit is
-                // visible (a Set returning OK that the board's PBO/AGESA later overrides).
-                if (result.Messages.Count > 0)
-                    PrependResult(string.Join(Environment.NewLine, result.Messages) + Environment.NewLine);
-            }
-            catch (Exception ex)
-            {
-                HandleError(ex.Message);
-            }
+            await ApplyTuningAsync(GatherProfileFromUi(CurrentProfileName));
         }
 
         private void ButtonSaveProfile_Click(object sender, EventArgs e)
@@ -1124,22 +1080,21 @@ namespace ZenStatesDebugTool
             return cpu.smu.SMU_TYPE >= SMU.SmuType.TYPE_APU0 && cpu.smu.SMU_TYPE <= SMU.SmuType.TYPE_APU2;
         }
 
-        private void EnableOCMode(bool prochotEnabled = true)
+        private bool EnableOCMode(bool prochotEnabled = true)
         {
-            bool ok = Hardware.Locked(() =>
-                cpu.smu.SendSmuCommand(cpu.smu.Rsmu, cpu.smu.Rsmu.SMU_MSG_EnableOcMode, prochotEnabled ? 0U : 0x1000000));
-            if (ok)
-                SetStatusText(prochotEnabled ? "PROCHOT enabled." : "PROCHOT disabled.");
-            else
-                HandleError("Error setting OC Mode!");
+            uint[] args = new uint[6];
+            args[0] = prochotEnabled ? 0U : 0x1000000;
+            return cpu.smu.SendSmuCommand(cpu.smu.Rsmu, cpu.smu.Rsmu.SMU_MSG_EnableOcMode, ref args) == SMU.Status.OK;
         }
 
-        private void DisableOCMode()
+        private async Task DisableOCMode()
         {
-            if (Hardware.Locked(() => cpu.DisableOcMode()) == SMU.Status.OK)
-                SetStatusText(string.Format("Set OK!"));
-            else
-                HandleError("Error disabling OC Mode!");
+            try
+            {
+                var status = await RunHardwareAsync(() => Hardware.Locked(() => cpu.DisableOcMode()));
+                if (!shuttingDown) SetStatusText("Disable OC Mode: " + status);
+            }
+            catch (Exception ex) { if (!shuttingDown) HandleError(ex.Message); }
         }
 
         // Manual-OC frequency tab. Every Apply writes ALL cores at once (from the per-core
@@ -1154,7 +1109,7 @@ namespace ZenStatesDebugTool
         // Whether this CPU allows manual OC (fixed frequency / fixed voltage via OC Mode).
         // AMD fuses this off on X3D parts (e.g. 5800X3D), where the SMU rejects EnableOcMode
         // and every OC write. Set in BuildFrequencyTab from the SMU's IsOverclockable answer.
-        private bool _manualOcSupported;
+        private bool _manualOcSupported = true;
 
         private void BuildFrequencyTab()
         {
@@ -1164,9 +1119,7 @@ namespace ZenStatesDebugTool
             // Only treat OC as locked on a DEFINITIVE "not overclockable" answer: the SMU must
             // define the IsOverclockable query and report OC disabled. If the query isn't defined
             // we can't tell, so leave the tab enabled (an Apply would surface its own error).
-            bool ocQueryDefined = cpu.smu.Rsmu.SMU_MSG_IsOverclockable != 0;
-            _manualOcSupported = !ocQueryDefined
-                || Hardware.Locked(() => cpu.GetOverclockingCaps()[OcCapabilities.OverclockingEnabled]);
+
             if (!_manualOcSupported)
             {
                 BuildManualOcLockedTab(tab);
@@ -1227,7 +1180,7 @@ namespace ZenStatesDebugTool
             voltRow.Controls.Add(new Label { Text = "Core voltage (all cores)", AutoSize = true, Width = 130, Margin = new Padding(0, 6, 8, 0) });
             voltRow.Controls.Add(_ocVoltageNud);
             var applyVoltBtn = new Button { Text = "Apply voltage", AutoSize = true, UseVisualStyleBackColor = true, Margin = new Padding(6, 0, 0, 0) };
-            applyVoltBtn.Click += (s, e) => ApplyOverclockVoltage();
+            applyVoltBtn.Click += async (s, e) => await ApplyOverclockVoltage();
             voltRow.Controls.Add(applyVoltBtn);
 
             // Capability guard: disable if the SMU defines no SetOverclockCpuVid message in
@@ -1300,9 +1253,9 @@ namespace ZenStatesDebugTool
                 Padding = new Padding(8, 4, 8, 6)
             };
             var applyBtn = new Button { Text = "Apply all cores", AutoSize = false, Size = new Size(115, 26), UseVisualStyleBackColor = true, Margin = new Padding(0, 0, 8, 0) };
-            applyBtn.Click += (s, e) => ApplyAllCoreFrequencies();
+            applyBtn.Click += async (s, e) => await ApplyAllCoreFrequencies();
             var offBtn = new Button { Text = "Disable OC Mode", AutoSize = false, Size = new Size(115, 26), UseVisualStyleBackColor = true, Margin = new Padding(0, 0, 0, 0) };
-            offBtn.Click += (s, e) => DisableOCMode();
+            offBtn.Click += async (s, e) => await DisableOCMode();
             actionBar.Controls.Add(applyBtn);
             actionBar.Controls.Add(offBtn);
 
@@ -1365,17 +1318,26 @@ namespace ZenStatesDebugTool
         }
 
         // Enables OC Mode and writes EVERY core's frequency, so none are left at the default.
-        private void ApplyAllCoreFrequencies()
+        private async Task ApplyAllCoreFrequencies()
         {
-            if (cpu == null || freqControls.Count == 0) return;
-            EnableOCMode(true);
-            bool ok = true;
-            foreach (var kv in freqControls)
-                ok &= SetCoreFrequency(kv.Key, (int)kv.Value.Value);
-            if (ok)
-                SetStatusText($"Applied per-core frequencies to {freqControls.Count} cores (OC Mode on).");
-            else
-                HandleError("Some cores failed to set. Check the values are in range and OC Mode is active.");
+            if (!_hardwareReady) { SetStatusText("Hardware is still loading."); return; }
+            if (!_manualOcSupported || cpu == null || freqControls.Count == 0) return;
+            var values = freqControls.ToDictionary(x => x.Key, x => (int)x.Value.Value);
+            try
+            {
+                bool ok = await RunHardwareAsync(() => Hardware.Locked(() =>
+                {
+                    if (!EnableOCMode(true)) return false;
+                    foreach (var kv in values)
+                    {
+                        Hardware.ThrowIfClosing();
+                        if (!SetCoreFrequency(kv.Key, kv.Value)) return false;
+                    }
+                    return true;
+                }));
+                if (!shuttingDown) SetStatusText(ok ? $"Frequencies accepted for {values.Count} cores (OC Mode on; unverified)." : "OC frequency apply stopped after a rejected command.");
+            }
+            catch (Exception ex) { if (!shuttingDown) HandleError(ex.Message); }
         }
 
         // Applies the single all-core manual-OC voltage. Enables OC Mode first so the
@@ -1383,25 +1345,31 @@ namespace ZenStatesDebugTool
         // to run this BEFORE applying frequencies: this pins the voltage while cores idle
         // at the OC-mode default (~2500 MHz), so frequency then ramps into an established
         // voltage floor rather than a high clock on an undefined voltage.
-        private void ApplyOverclockVoltage()
+        private async Task ApplyOverclockVoltage()
         {
-            if (cpu == null || _ocVoltageNud == null || !_ocVoltageNud.Enabled) return;
-
-            double volts = (double)_ocVoltageNud.Value;
-            bool svi3 = SmuDecodeAdapter.IsSvi3(cpu.info.codeName);
-            uint vid = VoltageCodec.VoltageToVid(volts, svi3);
-
-            EnableOCMode(true);
-            bool ok = Hardware.Locked(() => cpu.SetOverclockCpuVid(vid) == SMU.Status.OK);
-            if (ok)
+            if (!_hardwareReady) { SetStatusText("Hardware is still loading."); return; }
+            try
             {
-                // Report the voltage actually applied (derived from the VID), which can
-                // differ from the typed value when it rounds/clamps to an encodable VID.
-                double appliedVolts = VoltageCodec.VidToVoltage(vid, svi3);
-                SetStatusText($"{appliedVolts:0.000} V (VID {vid}) applied - OC Mode on. Apply frequencies next.");
+                if (!_manualOcSupported || cpu == null || _ocVoltageNud == null || !_ocVoltageNud.Enabled) return;
+
+                double volts = (double)_ocVoltageNud.Value;
+                bool svi3 = SmuDecodeAdapter.IsSvi3(cpu.info.codeName);
+                uint vid = VoltageCodec.VoltageToVid(volts, svi3);
+
+                bool ok = await RunHardwareAsync(() => Hardware.Locked(() => EnableOCMode(true) && cpu.SetOverclockCpuVid(vid) == SMU.Status.OK));
+                if (ok)
+                {
+                    // Report the voltage actually applied (derived from the VID), which can
+                    // differ from the typed value when it rounds/clamps to an encodable VID.
+                    double appliedVolts = VoltageCodec.VidToVoltage(vid, svi3);
+                    SetStatusText($"{appliedVolts:0.000} V (VID {vid}) applied - OC Mode on. Apply frequencies next.");
+                }
+                else
+                    HandleError("Failed to set core voltage.");
+
             }
-            else
-                HandleError("Failed to set core voltage.");
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { if (!shuttingDown) HandleError(ex.Message); }
         }
 
         private NumericUpDown MakeFreqNud()
@@ -1563,7 +1531,7 @@ namespace ZenStatesDebugTool
             catch { return false; }
         }
 
-        private void ShowResultForm(string title="Result", string result="No result")
+        private void ShowResultForm(string title = "Result", string result = "No result")
         {
             Invoke(new MethodInvoker(delegate
             {
@@ -1577,55 +1545,61 @@ namespace ZenStatesDebugTool
         }
 
         // TODO: Show all args
-        private void ApplySettings()
+        private async Task ApplySettings()
         {
             try
             {
-                uint[] args = ZenStates.Core.Utils.MakeCmdArgs();
-                string[] userArgs = textBoxARG0.Text.Trim().Split(',');
-
-                TryConvertToUint(textBoxCMDAddress.Text, out uint addrMsg);
-                TryConvertToUint(textBoxRSPAddress.Text, out uint addrRsp);
-                TryConvertToUint(textBoxARGAddress.Text, out uint addrArg);
-                TryConvertToUint(textBoxCMD.Text, out uint command);
-
-                testMailbox.SMU_ADDR_MSG = addrMsg;
-                testMailbox.SMU_ADDR_RSP = addrRsp;
-                testMailbox.SMU_ADDR_ARG = addrArg;
-
-                for (var i = 0; i < userArgs.Length; i++)
+                try
                 {
-                    if (i == args.Length)
-                        break;
+                    uint[] args = ZenStates.Core.Utils.MakeCmdArgs();
+                    string[] userArgs = textBoxARG0.Text.Trim().Split(',');
 
-                    TryConvertToUint(userArgs[i], out uint temp);
-                    args[i] = temp;
+                    TryConvertToUint(textBoxCMDAddress.Text, out uint addrMsg);
+                    TryConvertToUint(textBoxRSPAddress.Text, out uint addrRsp);
+                    TryConvertToUint(textBoxARGAddress.Text, out uint addrArg);
+                    TryConvertToUint(textBoxCMD.Text, out uint command);
+
+                    testMailbox.SMU_ADDR_MSG = addrMsg;
+                    testMailbox.SMU_ADDR_RSP = addrRsp;
+                    testMailbox.SMU_ADDR_ARG = addrArg;
+
+                    for (var i = 0; i < userArgs.Length; i++)
+                    {
+                        if (i == args.Length)
+                            break;
+
+                        TryConvertToUint(userArgs[i], out uint temp);
+                        args[i] = temp;
+                    }
+
+
+                    Debug.WriteLine("MSG Address:  0x" + Convert.ToString(testMailbox.SMU_ADDR_MSG, 16).ToUpper());
+                    Debug.WriteLine("RSP Address:  0x" + Convert.ToString(testMailbox.SMU_ADDR_RSP, 16).ToUpper());
+                    Debug.WriteLine("ARG0 Address: 0x" + Convert.ToString(testMailbox.SMU_ADDR_ARG, 16).ToUpper());
+                    Debug.WriteLine("ARG0        : 0x" + Convert.ToString(args[0], 16).ToUpper());
+
+                    uint[] argsLocal = args;
+                    SMU.Status status = await RunHardwareAsync(() => Hardware.Locked(() => cpu.smu.SendSmuCommand(testMailbox, command, ref argsLocal)));
+                    args = argsLocal;
+
+                    if (status == SMU.Status.OK)
+                    {
+                        string cmdName = SmuCommandNames.Resolve(smuNameMap, command);
+                        if (cmdName != null)
+                            PrependResult($"CMD: 0x{command:X} ({cmdName}){Environment.NewLine}");
+                        ShowResultMessageBox(args);
+                    }
+
+                    SetStatusText(GetSMUStatus.GetByType(status));
                 }
-                
-
-                Debug.WriteLine("MSG Address:  0x" + Convert.ToString(testMailbox.SMU_ADDR_MSG, 16).ToUpper());
-                Debug.WriteLine("RSP Address:  0x" + Convert.ToString(testMailbox.SMU_ADDR_RSP, 16).ToUpper());
-                Debug.WriteLine("ARG0 Address: 0x" + Convert.ToString(testMailbox.SMU_ADDR_ARG, 16).ToUpper());
-                Debug.WriteLine("ARG0        : 0x" + Convert.ToString(args[0], 16).ToUpper());
-
-                uint[] argsLocal = args;
-                SMU.Status status = Hardware.Locked(() => cpu.smu.SendSmuCommand(testMailbox, command, ref argsLocal));
-                args = argsLocal;
-
-                if (status == SMU.Status.OK)
+                catch (ApplicationException ex)
                 {
-                    string cmdName = SmuCommandNames.Resolve(smuNameMap, command);
-                    if (cmdName != null)
-                        PrependResult($"CMD: 0x{command:X} ({cmdName}){Environment.NewLine}");
-                    ShowResultMessageBox(args);
+                    HandleError(ex.Message);
                 }
 
-                SetStatusText(GetSMUStatus.GetByType(status));
             }
-            catch (ApplicationException ex)
-            {
-                HandleError(ex.Message);
-            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { if (!shuttingDown) HandleError(ex.Message); }
         }
 
         private void ButtonDefaults_Click(object sender, EventArgs e)
@@ -1636,11 +1610,11 @@ namespace ZenStatesDebugTool
             textBoxARG0.Text = "0";
         }
 
-        private void ButtonApply_Click(object sender, EventArgs e)
+        private async void ButtonApply_Click(object sender, EventArgs e)
         {
             try
             {
-                ApplySettings();
+                await ApplySettings();
             }
             catch (ApplicationException ex)
             {
@@ -1648,77 +1622,89 @@ namespace ZenStatesDebugTool
             }
         }
 
-        private void HandlePciReadBtnClick()
+        private async Task HandlePciReadBtnClick()
         {
             try
             {
-                SetStatusText("Reading, please wait...");
-                SetButtonsState(false);
+                try
+                {
+                    SetStatusText("Reading, please wait...");
+                    SetButtonsState(false);
 
-                TryConvertToUint(textBoxPciAddress.Text, out uint address);
-                uint data = Hardware.Locked(() => cpu.ReadDword(address));
+                    TryConvertToUint(textBoxPciAddress.Text, out uint address);
+                    uint data = await RunHardwareAsync(() => Hardware.Locked(() => cpu.ReadDword(address)));
 
-                textBoxPciValue.Text = $"0x{data:X8}";
+                    textBoxPciValue.Text = $"0x{data:X8}";
 
-                SetButtonsState();
-                SetStatusText(GetSMUStatus.GetByType(SMU.Status.OK));
-                ShowResult(data);
+                    SetButtonsState();
+                    SetStatusText(GetSMUStatus.GetByType(SMU.Status.OK));
+                    ShowResult(data);
+                }
+                catch (ApplicationException ex)
+                {
+                    SetButtonsState();
+                    HandleError(ex.Message);
+                }
+
             }
-            catch (ApplicationException ex)
-            {
-                SetButtonsState();
-                HandleError(ex.Message);
-            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { if (!shuttingDown) HandleError(ex.Message); }
         }
 
-        private void HandlePciWriteBtnClick()
+        private async Task HandlePciWriteBtnClick()
         {
             try
             {
-                SetStatusText("Writing, please wait...");
-                SetButtonsState(false);
+                try
+                {
+                    SetStatusText("Writing, please wait...");
+                    SetButtonsState(false);
 
-                TryConvertToUint(textBoxPciAddress.Text, out uint address);
-                TryConvertToUint(textBoxPciValue.Text, out uint data);
+                    TryConvertToUint(textBoxPciAddress.Text, out uint address);
+                    TryConvertToUint(textBoxPciValue.Text, out uint data);
 
-                bool res = Hardware.Locked(() =>
-                    cpu.WriteDwordEx(cpu.smu.SMU_OFFSET_ADDR, address) &&
-                    cpu.WriteDwordEx(cpu.smu.SMU_OFFSET_DATA, data));
+                    bool res = await RunHardwareAsync(() => Hardware.Locked(() =>
+                        cpu.WriteDwordEx(cpu.smu.SMU_OFFSET_ADDR, address) &&
+                        cpu.WriteDwordEx(cpu.smu.SMU_OFFSET_DATA, data)));
 
-                if (res)
-                    SetStatusText("Write OK.");
-                else
-                    SetStatusText(Resources.Error);
+                    if (res)
+                        SetStatusText("Write OK.");
+                    else
+                        SetStatusText(Resources.Error);
 
-                SetButtonsState();
+                    SetButtonsState();
+                }
+                catch (ApplicationException ex)
+                {
+                    SetButtonsState();
+                    HandleError(ex.Message);
+                }
+
             }
-            catch (ApplicationException ex)
-            {
-                SetButtonsState();
-                HandleError(ex.Message);
-            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { if (!shuttingDown) HandleError(ex.Message); }
         }
 
-        private void ButtonPciRead_Click(object sender, EventArgs e)
+        private async void ButtonPciRead_Click(object sender, EventArgs e)
         {
-            HandlePciReadBtnClick();
+            await HandlePciReadBtnClick();
         }
 
-        private void TextBoxPciAddress_KeyDown(object sender, KeyEventArgs e)
+        private async void TextBoxPciAddress_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.KeyCode == Keys.Enter)
-                HandlePciReadBtnClick();
+                await HandlePciReadBtnClick();
         }
 
-        private void ButtonPciWrite_Click(object sender, EventArgs e)
+        private async void ButtonPciWrite_Click(object sender, EventArgs e)
         {
-            HandlePciWriteBtnClick();
+            await HandlePciWriteBtnClick();
         }
 
-        private void TextBoxPciValue_KeyDown(object sender, KeyEventArgs e)
+        private async void TextBoxPciValue_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.KeyCode == Keys.Enter)
-                HandlePciWriteBtnClick();
+                await HandlePciWriteBtnClick();
         }
 
         private SMU.Status TrySettings(uint msgAddr, uint rspAddr, uint argAddr, uint cmd, uint value)
@@ -1739,10 +1725,13 @@ namespace ZenStatesDebugTool
 
             List<KeyValuePair<uint, uint>> temp = new List<KeyValuePair<uint, uint>>();
 
-            while (start <= end)
+            if (step == 0 || end < start || (ulong)end - start > 65536) throw new ApplicationException("Invalid or excessively large SMU scan range.");
+            for (ulong address = start; address <= end; address += step)
             {
-                uint smuRspAddress = start + offset;
- 
+                Hardware.ThrowIfClosing();
+                start = (uint)address;
+                ulong smuRspAddress = (ulong)start + offset;
+
                 // Each cpu access is locked individually (not the whole loop) because the
                 // match-found branch below marshals to the UI thread with a synchronous
                 // Invoke; holding Hardware.Sync across that would risk a cross-thread deadlock.
@@ -1755,7 +1744,7 @@ namespace ZenStatesDebugTool
 
                         while (smuRspAddress <= end)
                         {
-                            uint rspAddr = smuRspAddress;
+                            uint rspAddr = (uint)smuRspAddress;
                             // Expect UNKNOWN_CMD status to be returned if the mailbox works
                             if (Hardware.Locked(() => cpu.ReadDword(rspAddr)) == 0xFE)
                             {
@@ -1764,7 +1753,7 @@ namespace ZenStatesDebugTool
                                 {
                                     Thread.Sleep(10);
                                     if (Hardware.Locked(() => cpu.ReadDword(rspAddr)) == 0x1)
-                                        temp.Add(new KeyValuePair<uint, uint>(start, smuRspAddress));
+                                        temp.Add(new KeyValuePair<uint, uint>(start, (uint)smuRspAddress));
                                 }
                             }
                             smuRspAddress += step;
@@ -1772,7 +1761,7 @@ namespace ZenStatesDebugTool
                     }
                 }
 
-                start += step;
+
             }
 
             if (temp.Count > 0)
@@ -1793,13 +1782,13 @@ namespace ZenStatesDebugTool
 
                 if (TrySettings(pair.Key, pair.Value, 0xFFFFFFFF, 0x2, 0xFF) == SMU.Status.OK)
                 {
-                    var smuArgAddress = pair.Value + 4;
+                    ulong smuArgAddress = (ulong)pair.Value + 4;
                     while (smuArgAddress <= end)
                     {
-                        uint argAddr = smuArgAddress;
+                        uint argAddr = (uint)smuArgAddress;
                         if (Hardware.Locked(() => cpu.ReadDword(argAddr)) == cpu.smu.Version)
                         {
-                            possibleArgAddresses.Add(smuArgAddress);
+                            possibleArgAddresses.Add((uint)smuArgAddress);
                         }
                         smuArgAddress += step;
                     }
@@ -1847,10 +1836,12 @@ namespace ZenStatesDebugTool
         }
 
 
-        private void RunBackgroundTask(DoWorkEventHandler task, RunWorkerCompletedEventHandler completedHandler)
+        private void RunBackgroundTask(DoWorkEventHandler task, RunWorkerCompletedEventHandler completedHandler, object argument = null)
         {
             try
             {
+                if (hardwareOperation || (backgroundWorker1?.IsBusy ?? false) || shuttingDown) return;
+                tabControl1.Enabled = false;
                 SetButtonsState(false);
                 textBoxResult.Clear();
 
@@ -1859,8 +1850,14 @@ namespace ZenStatesDebugTool
                 backgroundWorker1?.Dispose();
                 backgroundWorker1 = new BackgroundWorker();
                 backgroundWorker1.DoWork += task;
-                backgroundWorker1.RunWorkerCompleted += completedHandler;
-                backgroundWorker1.RunWorkerAsync();
+                backgroundWorker1.RunWorkerCompleted += (sender, args) =>
+                {
+                    if (shuttingDown || IsDisposed) return;
+                    tabControl1.Enabled = true;
+                    if (args.Error != null) { SetButtonsState(); SetStatusText("Operation failed: " + args.Error.Message); }
+                    else completedHandler(sender, args);
+                };
+                backgroundWorker1.RunWorkerAsync(argument);
             }
             catch (ApplicationException ex)
             {
@@ -1899,7 +1896,7 @@ namespace ZenStatesDebugTool
                     case Cpu.CodeName.Naples:
                     case Cpu.CodeName.Colfax:
                     case Cpu.CodeName.Vermeer:
-                    //case Cpu.CodeName.Raphael:
+                        //case Cpu.CodeName.Raphael:
                         ScanSmuRange(0x03B10500, 0x03B10998, 8, 0x3C);
                         ScanSmuRange(0x03B10500, 0x03B10AFF, 4, 0x4C);
                         break;
@@ -2100,13 +2097,14 @@ namespace ZenStatesDebugTool
                 && pstateIdBox.SelectedItem is PStateItem item && pstateReadId == item.Id;
         }
 
-        private void BtnPstateRead_Click(object sender, EventArgs e)
+        private async void BtnPstateRead_Click(object sender, EventArgs e)
         {
             ResetPStateFields();
             if (!(pstateIdBox.SelectedItem is PStateItem item)) return;
             try
             {
-                var read = hardware.ReadPState(item.Id);
+                var read = await RunHardwareAsync(() => hardware.ReadPState(item.Id));
+                if (shuttingDown) return;
                 if (!read.Ok)
                 {
                     SetStatusText($"Error reading P-state {item.Id}.");
@@ -2134,7 +2132,7 @@ namespace ZenStatesDebugTool
             catch (Exception ex) { SetStatusText($"P-state read failed: {ex.Message}"); }
         }
 
-        private void BtnPstateWrite_Click(object sender, EventArgs e)
+        private async void BtnPstateWrite_Click(object sender, EventArgs e)
         {
             if (!(pstateIdBox.SelectedItem is PStateItem item) || pstateReadId != item.Id
                 || !hardware.CanWritePStates)
@@ -2158,7 +2156,10 @@ namespace ZenStatesDebugTool
 
             pstateReadId = null;
             btnPstateWrite.Enabled = false;
-            var result = hardware.WritePStateFrequency(item.Id, decodeContext.PStateLayout, fid, did);
+            PStateWriteResult result;
+            try { result = await RunHardwareAsync(() => hardware.WritePStateFrequency(item.Id, decodeContext.PStateLayout, fid, did)); }
+            catch (Exception ex) { if (!shuttingDown) SetStatusText(ex.Message); return; }
+            if (shuttingDown) return;
             if (result.Success)
             {
                 BtnPstateRead_Click(sender, e);
@@ -2180,14 +2181,8 @@ namespace ZenStatesDebugTool
         {
             try
             {
-                TryConvertToUint(textBoxPciStartReg.Text, out uint startReg);
-                TryConvertToUint(textBoxPciEndReg.Text, out uint endReg);
-
-                if (endReg <= startReg)
-                {
-                    HandleError("End register is not greater than start register");
-                    return;
-                }
+                var range = (Tuple<uint, uint>)e.Argument;
+                uint startReg = range.Item1, endReg = range.Item2;
 
                 Invoke(new MethodInvoker(delegate
                 {
@@ -2200,14 +2195,18 @@ namespace ZenStatesDebugTool
                 // result-form marshals are outside this region.
                 lock (Hardware.Sync)
                 {
-                    while (startReg <= endReg)
+                    Hardware.ThrowIfClosing();
+                    if ((ulong)endReg - startReg > 262144) throw new ApplicationException("Scan at most 256 KiB at a time.");
+                    for (ulong address = startReg; address <= endReg; address += 4)
                     {
+                        Hardware.ThrowIfClosing();
+                        startReg = (uint)address;
                         var data = cpu.ReadDword(startReg);
                         result.AppendLine($"0x{startReg:X8}: 0x{data:X8} {Convert.ToString(data, 2).PadLeft(32, '0')}");
                         string decoded = RegisterDecoder.Decode(RegisterKind.Pci, startReg, data, decodeContext);
                         if (!string.IsNullOrEmpty(decoded))
                             result.Append(decoded);
-                        startReg += 4;
+
                     }
                 }
 
@@ -2250,47 +2249,61 @@ namespace ZenStatesDebugTool
 
         private void ButtonPciScan_Click(object sender, EventArgs e)
         {
-            RunBackgroundTask(PciScan_DoWork, Scan_WorkerCompleted);
+            try
+            {
+                TryConvertToUint(textBoxPciStartReg.Text, out uint start);
+                TryConvertToUint(textBoxPciEndReg.Text, out uint end);
+                if (end <= start || (ulong)end - start > 262144) { HandleError("Select an increasing PCI range of at most 256 KiB."); return; }
+                RunBackgroundTask(PciScan_DoWork, Scan_WorkerCompleted, Tuple.Create(start, end));
+            }
+            catch (Exception ex) { HandleError(ex.Message); }
         }
 
-        private void ButtonApplyPROCHOT_Click(object sender, EventArgs e)
+        private async void ButtonApplyPROCHOT_Click(object sender, EventArgs e)
         {
-            if (checkBoxPROCHOT.Checked)
+            try
             {
-                // Enabling PROCHOT = normal operation. Exiting OC mode restores PBO /
-                // auto-boost and re-asserts PROCHOT; we must NOT enter OC mode here
-                // (doing so would pin all cores to the SMU's default OC frequency).
-                DisableOCMode();
-            }
-            else
-            {
-                // Disabling PROCHOT requires manual OC mode on Ryzen, which pins the
-                // all-core clock and disables PBO / auto-boost until PROCHOT is
-                // re-enabled. Make the trade-off explicit before applying it.
-                DialogResult choice = MessageBox.Show(
-                    "Disabling PROCHOT requires the CPU to enter manual OC mode.\n\n" +
-                    "While PROCHOT is disabled, all cores are pinned to a fixed frequency " +
-                    "and PBO / auto-boost are turned off. Re-enable PROCHOT to restore " +
-                    "normal operation.\n\nContinue?",
-                    "Disable PROCHOT?",
-                    MessageBoxButtons.YesNo,
-                    MessageBoxIcon.Warning);
-
-                if (choice != DialogResult.Yes)
+                if (checkBoxPROCHOT.Checked)
                 {
-                    // User backed out: restore the checkbox to the enabled state.
-                    checkBoxPROCHOT.Checked = true;
-                    return;
+                    // Enabling PROCHOT = normal operation. Exiting OC mode restores PBO /
+                    // auto-boost and re-asserts PROCHOT; we must NOT enter OC mode here
+                    // (doing so would pin all cores to the SMU's default OC frequency).
+                    await DisableOCMode();
+                }
+                else
+                {
+                    // Disabling PROCHOT requires manual OC mode on Ryzen, which pins the
+                    // all-core clock and disables PBO / auto-boost until PROCHOT is
+                    // re-enabled. Make the trade-off explicit before applying it.
+                    DialogResult choice = MessageBox.Show(
+                        "Disabling PROCHOT requires the CPU to enter manual OC mode.\n\n" +
+                        "While PROCHOT is disabled, all cores are pinned to a fixed frequency " +
+                        "and PBO / auto-boost are turned off. Re-enable PROCHOT to restore " +
+                        "normal operation.\n\nContinue?",
+                        "Disable PROCHOT?",
+                        MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Warning);
+
+                    if (choice != DialogResult.Yes)
+                    {
+                        // User backed out: restore the checkbox to the enabled state.
+                        checkBoxPROCHOT.Checked = true;
+                        return;
+                    }
+
+                    bool accepted = await RunHardwareAsync(() => Hardware.Locked(() => EnableOCMode(false)));
+                    if (!accepted) { SetStatusText("OC mode command rejected."); return; }
                 }
 
-                EnableOCMode(false);
-            }
+                if (!checkBoxPROCHOT.Checked && await RunHardwareAsync(() => Hardware.Locked(() => cpu.IsProchotEnabled())) == true)
+                {
+                    checkBoxPROCHOT.Checked = true;
+                    HandleError($@"Error, PROCHOT could not be disabled!");
+                }
 
-            if (!checkBoxPROCHOT.Checked && Hardware.Locked(() => cpu.IsProchotEnabled()) == true)
-            {
-                checkBoxPROCHOT.Checked = true;
-                HandleError($@"Error, PROCHOT could not be disabled!");
             }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { if (!shuttingDown) HandleError(ex.Message); }
         }
 
         private uint _msrScanStart;
@@ -2317,35 +2330,47 @@ namespace ZenStatesDebugTool
             ShowResultForm("MSR Scan result", result.ToString());
         }
 
-        private void ButtonMsrRead_Click(object sender, EventArgs e)
+        private async void ButtonMsrRead_Click(object sender, EventArgs e)
         {
-            TryConvertToUint(textBoxMsrAddress.Text, out uint msr);
-            MsrReadResult r = hardware.ReadMsr(msr);
-            if (r.Ok)
+            try
             {
-                textBoxMsrEdx.Text = $"0x{r.Edx:X8}";
-                textBoxMsrEax.Text = $"0x{r.Eax:X8}";
+                TryConvertToUint(textBoxMsrAddress.Text, out uint msr);
+                MsrReadResult r = await RunHardwareAsync(() => hardware.ReadMsr(msr));
+                if (r.Ok)
+                {
+                    textBoxMsrEdx.Text = $"0x{r.Edx:X8}";
+                    textBoxMsrEax.Text = $"0x{r.Eax:X8}";
 
-                ulong value = ((ulong)r.Edx << 32) | r.Eax;
-                string decoded = RegisterDecoder.Decode(RegisterKind.Msr, msr, value, decodeContext);
-                if (!string.IsNullOrEmpty(decoded))
-                    PrependResult(decoded + Environment.NewLine);
+                    ulong value = ((ulong)r.Edx << 32) | r.Eax;
+                    string decoded = RegisterDecoder.Decode(RegisterKind.Msr, msr, value, decodeContext);
+                    if (!string.IsNullOrEmpty(decoded))
+                        PrependResult(decoded + Environment.NewLine);
+                }
+
             }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { if (!shuttingDown) HandleError(ex.Message); }
         }
 
-        private void ButtonMsrWrite_Click(object sender, EventArgs e)
+        private async void ButtonMsrWrite_Click(object sender, EventArgs e)
         {
-            TryConvertToUint(textBoxMsrEdx.Text, out uint edx);
-            TryConvertToUint(textBoxMsrEax.Text, out uint eax);
-            TryConvertToUint(textBoxMsrAddress.Text, out uint msr);
-
-            if (!hardware.WriteMsr(msr, eax, edx))
+            try
             {
-                HandleError($@"Error writing MSR {textBoxMsrAddress.Text}!");
-                return;
-            }
+                TryConvertToUint(textBoxMsrEdx.Text, out uint edx);
+                TryConvertToUint(textBoxMsrEax.Text, out uint eax);
+                TryConvertToUint(textBoxMsrAddress.Text, out uint msr);
 
-            SetStatusText("Write OK.");
+                if (!await RunHardwareAsync(() => hardware.WriteMsr(msr, eax, edx)))
+                {
+                    HandleError($@"Error writing MSR {textBoxMsrAddress.Text}!");
+                    return;
+                }
+
+                SetStatusText("Write OK.");
+
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { if (!shuttingDown) HandleError(ex.Message); }
         }
 
         private void ButtonMsrScan_Click(object sender, EventArgs e)
@@ -2378,14 +2403,18 @@ namespace ZenStatesDebugTool
 
                 lock (Hardware.Sync)
                 {
+                    Hardware.ThrowIfClosing();
                     if (cpu.Cpuid(0x00000000, ref eax, ref ebx, ref ecx, ref edx))
                         LFuncStd = eax;
 
                     if (cpu.Cpuid(0x80000000, ref eax, ref ebx, ref ecx, ref edx))
                         LFuncExt = eax - 0x80000000;
 
+                    LFuncStd = Math.Min(LFuncStd, 65535);
+                    LFuncExt = Math.Min(LFuncExt, 65535);
                     for (uint i = 0; i <= LFuncStd; ++i)
                     {
+                        Hardware.ThrowIfClosing();
                         var index = 0x00000000 + i;
                         cpu.Cpuid(index, ref eax, ref ebx, ref ecx, ref edx);
                         result.AppendLine($"0x{index:X8}: 0x{eax:X8} 0x{ebx:X8} 0x{ecx:X8} 0x{edx:X8}");
@@ -2396,6 +2425,7 @@ namespace ZenStatesDebugTool
 
                     for (uint i = 0; i <= LFuncExt; ++i)
                     {
+                        Hardware.ThrowIfClosing();
                         var index = 0x80000000 + i;
                         cpu.Cpuid(index, ref eax, ref ebx, ref ecx, ref edx);
                         result.AppendLine($"0x{index:X8}: 0x{eax:X8} 0x{ebx:X8} 0x{ecx:X8} 0x{edx:X8}");
@@ -2417,24 +2447,30 @@ namespace ZenStatesDebugTool
             }
         }
 
-        private void ButtonCPUIDRead_Click(object sender, EventArgs e)
+        private async void ButtonCPUIDRead_Click(object sender, EventArgs e)
         {
-            TryConvertToUint(textBoxCPUIDAddress.Text, out uint index);
-            uint eax = 0, ebx = 0, ecx = 0, edx = 0;
-            uint cEax = 0, cEbx = 0, cEcx = 0, cEdx = 0;
-            bool ok = Hardware.Locked(() => cpu.Cpuid(index, ref cEax, ref cEbx, ref cEcx, ref cEdx));
-            eax = cEax; ebx = cEbx; ecx = cEcx; edx = cEdx;
-            if (ok)
+            try
             {
-                textBoxCPUIDeax.Text = $"0x{eax:X8}";
-                textBoxCPUIDebx.Text = $"0x{ebx:X8}";
-                textBoxCPUIDecx.Text = $"0x{ecx:X8}";
-                textBoxCPUIDedx.Text = $"0x{edx:X8}";
+                TryConvertToUint(textBoxCPUIDAddress.Text, out uint index);
+                uint eax = 0, ebx = 0, ecx = 0, edx = 0;
+                uint cEax = 0, cEbx = 0, cEcx = 0, cEdx = 0;
+                bool ok = await RunHardwareAsync(() => Hardware.Locked(() => cpu.Cpuid(index, ref cEax, ref cEbx, ref cEcx, ref cEdx)));
+                eax = cEax; ebx = cEbx; ecx = cEcx; edx = cEdx;
+                if (ok)
+                {
+                    textBoxCPUIDeax.Text = $"0x{eax:X8}";
+                    textBoxCPUIDebx.Text = $"0x{ebx:X8}";
+                    textBoxCPUIDecx.Text = $"0x{ecx:X8}";
+                    textBoxCPUIDedx.Text = $"0x{edx:X8}";
 
-                string decoded = RegisterDecoder.Decode(RegisterKind.Cpuid, index, eax, decodeContext);
-                if (!string.IsNullOrEmpty(decoded))
-                    PrependResult(decoded + Environment.NewLine);
+                    string decoded = RegisterDecoder.Decode(RegisterKind.Cpuid, index, eax, decodeContext);
+                    if (!string.IsNullOrEmpty(decoded))
+                        PrependResult(decoded + Environment.NewLine);
+                }
+
             }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { if (!shuttingDown) HandleError(ex.Message); }
         }
 
         private void ButtonCPUIDScan_Click(object sender, EventArgs e)
@@ -2445,7 +2481,7 @@ namespace ZenStatesDebugTool
         private void ButtonPMTable_Click(object sender, EventArgs e)
         {
             if (cpu.Status == IODriver.LibStatus.OK)
-                new Thread(() => new PowerTableMonitor(cpu).ShowDialog()).Start();
+                new PowerTableMonitor(cpu).Show(this);
             else
                 HandleError("IO driver is not responding or not loaded.");
         }
@@ -2456,7 +2492,7 @@ namespace ZenStatesDebugTool
             TryConvertToUint(textBoxRSPAddress.Text, out uint addrRsp);
             TryConvertToUint(textBoxARGAddress.Text, out uint addrArg);
 
-            new Thread(() => new SMUMonitor(cpu, addrMsg, addrArg, addrRsp).ShowDialog()).Start();
+            new SMUMonitor(cpu, addrMsg, addrArg, addrRsp).Show(this);
         }
 
         private void ComboBoxMailboxSelect_SelectedIndexChanged(object sender, EventArgs e)
@@ -2465,14 +2501,16 @@ namespace ZenStatesDebugTool
             InitTestMailbox(item.msgAddr, item.rspAddr, item.argAddr);
         }
 
-        private void SettingsForm_FormClosed(object sender, FormClosedEventArgs e)
-        {
-            ExitApplication();
-        }
+        private void SettingsForm_FormClosed(object sender, FormClosedEventArgs e) { }
 
-        private void buttonGetCO_Click(object sender, EventArgs e)
+        private async void buttonGetCO_Click(object sender, EventArgs e)
         {
-            InitPBO();
+            try
+            {
+                var values = await RunHardwareAsync(() => Hardware.Locked(() => GatherCoMargins()));
+                if (!shuttingDown) { ApplyCoMargins(values); SetStatusText("CO read complete."); }
+            }
+            catch (Exception ex) { if (!shuttingDown) SetStatusText(ex.Message); }
         }
 
         private uint EncodeCoreMarginBitmask(int coreIndex, int coresPerCCD = 8)
@@ -2480,42 +2518,18 @@ namespace ZenStatesDebugTool
             return CoreTopology.EncodeCoreMarginBitmask(IsApu(), coreIndex, coresPerCCD);
         }
 
-        private void ApplyCO()
+        private async Task ApplyCO()
         {
-            //if (cpu.info.family == Cpu.Family.FAMILY_19H)
-            //if (cpu.smu.Rsmu.SMU_MSG_SetDldoPsmMargin != 0)
+            var profile = new Profile();
+            for (int i = 0; i < GetPhysicalCoreCount(); i++)
             {
-                lock (Hardware.Sync)
-                {
-                    for (var i = 0; i < GetPhysicalCoreCount(); i++)
-                    {
-                        if (IsCoreEnabled(i))
-                        {
-                            NumericUpDown control = GetCOControl(i);
-                            if (control != null)
-                            {
-                                cpu.SetPsmMarginSingleCore(EncodeCoreMarginBitmask(i), Convert.ToInt32(control.Value));
-                            }
-                        }
-                    }
-                }
+                var control = GetCOControl(i);
+                if (control != null && control.Enabled && IsCoreEnabled(i)) profile.CoMargins[i] = (int)control.Value;
             }
-            //else
-            //{
-            //    HandleError("Not supported");
-            //}
+            await ApplyTuningAsync(profile);
         }
 
-        private void ButtonApplyCO_Click(object sender, EventArgs e)
-        {
-            if (!_hardwareReady)
-            {
-                SetStatusText("Still loading hardware values, please wait...");
-                return;
-            }
-            ApplyCO();
-            InitPBO();
-        }
+        private async void ButtonApplyCO_Click(object sender, EventArgs e) { await ApplyCO(); }
 
         private string GetWmiInstanceName()
         {
@@ -2598,100 +2612,95 @@ namespace ZenStatesDebugTool
                 comboBoxAvailableCommands.SelectedIndex = 0;
         }
 
-        private void ComboBoxAvailableCommands_SelectedIndexChanged(object sender, EventArgs e)
+        private async void ComboBoxAvailableCommands_SelectedIndexChanged(object sender, EventArgs e)
         {
-            WmiCmdListItem command = comboBoxAvailableCommands.SelectedItem as WmiCmdListItem;
-
+            var command = comboBoxAvailableCommands.SelectedItem as WmiCmdListItem;
             comboBoxAvailableValues.Items.Clear();
-            comboBoxAvailableValues.Enabled = false;
+            comboBoxAvailableValues.Enabled = textBoxWmiArgument.Enabled = false;
             textBoxWmiArgument.Text = "";
-            textBoxWmiArgument.Enabled = false;
-
-            if (command.isSet) {
-                // Get possible values (index) of a memory option in BIOS
-                var dvaluesPack = WMI.InvokeMethodAndGetValue(classInstance, "Getdvalues", "pack", "ID", command.value);
-                if (dvaluesPack != null)
-                {
-                    uint[] DValuesBuffer = (uint[])dvaluesPack.GetPropertyValue("DValuesBuffer");
-                    Debug.WriteLine(command.text);
-                    foreach (uint value in DValuesBuffer)
-                    {
-                        if (value != 0)
-                        {
-                            WmiCmdListItem item = new WmiCmdListItem(value.ToString(), value);
-                            Debug.WriteLine(value);
-                            comboBoxAvailableValues.Items.Add(item);
-                        }
-                    }
-                    Debug.WriteLine("------------------------");
-
-                    if (comboBoxAvailableValues.Items.Count > 0)
-                        comboBoxAvailableValues.Enabled = true;
-                    else
-                        comboBoxAvailableValues.Items.Add("No values available for this command");
-                }
-                textBoxWmiArgument.Enabled = true;
-            }
-            else
+            if (command == null) return;
+            if (!command.isSet) { comboBoxAvailableValues.Items.Add("Get commands don't support values"); comboBoxAvailableValues.SelectedIndex = 0; return; }
+            try
             {
-                comboBoxAvailableValues.Items.Add("Get commands don't support values");
+                uint[] values = await RunHardwareAsync(() => Hardware.Locked(() =>
+                {
+                    var data = WMI.InvokeMethodAndGetValue(classInstance, "Getdvalues", "pack", "ID", command.value);
+                    return data == null ? null : (uint[])data.GetPropertyValue("DValuesBuffer");
+                }));
+                if (shuttingDown || comboBoxAvailableCommands.SelectedItem != command) return;
+                foreach (uint value in values ?? new uint[0])
+                    if (value != 0) comboBoxAvailableValues.Items.Add(new WmiCmdListItem(value.ToString(), value));
+                comboBoxAvailableValues.Enabled = comboBoxAvailableValues.Items.Count > 0;
+                textBoxWmiArgument.Enabled = true;
+                if (comboBoxAvailableValues.Items.Count > 0) comboBoxAvailableValues.SelectedIndex = 0;
             }
-
-            comboBoxAvailableValues.SelectedIndex = 0;
+            catch (Exception ex) { if (!shuttingDown) SetStatusText("ACPI values: " + ex.Message); }
         }
 
         private void ComboBoxAvailableValues_SelectedIndexChanged(object sender, EventArgs e)
         {
             WmiCmdListItem command = comboBoxAvailableCommands.SelectedItem as WmiCmdListItem;
-            if (command.isSet && comboBoxAvailableValues.Enabled)
+            if (command != null && command.isSet && comboBoxAvailableValues.Enabled)
                 textBoxWmiArgument.Text = comboBoxAvailableValues.Text;
             else
                 textBoxWmiArgument.Text = "";
         }
 
-        private void ButtonWmiCmdSend_Click(object sender, EventArgs e)
+        private async void ButtonWmiCmdSend_Click(object sender, EventArgs e)
         {
-            WmiCmdListItem command = comboBoxAvailableCommands.SelectedItem as WmiCmdListItem;
-            if (command == null) return;
-
-            uint value = 0;
-            if (command.isSet)
+            try
             {
-                if (!uint.TryParse(textBoxWmiArgument.Text.Trim(), out value))
-                {
-                    HandleError("Enter a valid numeric argument (0 - 65535).");
-                    return;
-                }
-            }
+                WmiCmdListItem command = comboBoxAvailableCommands.SelectedItem as WmiCmdListItem;
+                if (command == null) return;
 
-            if (value < 0x10000)
-            {
-                var response = WMI.RunCommand(classInstance, command.value, value);
-                var text = command.text + Environment.NewLine + "------------------------" + Environment.NewLine;
-                foreach (byte b in response)
+                uint value = 0;
+                if (command.isSet)
                 {
-                    text += "0x" + b.ToString("X2") + Environment.NewLine;
+                    if (!uint.TryParse(textBoxWmiArgument.Text.Trim(), out value))
+                    {
+                        HandleError("Enter a valid numeric argument (0 - 65535).");
+                        return;
+                    }
                 }
-                text += "------------------------" + Environment.NewLine;
-                PrependResult(text + Environment.NewLine);
+
+                if (value < 0x10000)
+                {
+                    var response = await RunHardwareAsync(() => Hardware.Locked(() => WMI.RunCommand(classInstance, command.value, value)));
+                    var text = command.text + Environment.NewLine + "------------------------" + Environment.NewLine;
+                    foreach (byte b in response)
+                    {
+                        text += "0x" + b.ToString("X2") + Environment.NewLine;
+                    }
+                    text += "------------------------" + Environment.NewLine;
+                    PrependResult(text + Environment.NewLine);
+                }
+
             }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { if (!shuttingDown) HandleError(ex.Message); }
         }
 
-        private void ButtonBCLKApply_Click(object sender, EventArgs e)
+        private async void ButtonBCLKApply_Click(object sender, EventArgs e)
         {
-            if (!double.TryParse(numericUpDownBclk.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double targetBclk)
-                && !double.TryParse(numericUpDownBclk.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out targetBclk))
+            try
             {
-                HandleError("Invalid BCLK value.");
-                return;
+                if (!double.TryParse(numericUpDownBclk.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double targetBclk)
+                    && !double.TryParse(numericUpDownBclk.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out targetBclk))
+                {
+                    HandleError("Invalid BCLK value.");
+                    return;
+                }
+                double? currentBclk = await RunHardwareAsync(() => Hardware.Locked(() =>
+                {
+                    cpu.SetBclk(targetBclk);
+                    return cpu.GetBclk();
+                }));
+                labelBCLK.Text = currentBclk + " MHz";
+                numericUpDownBclk.Text = $"{currentBclk}";
+
             }
-            double? currentBclk = Hardware.Locked(() =>
-            {
-                cpu.SetBclk(targetBclk);
-                return cpu.GetBclk();
-            });
-            labelBCLK.Text = currentBclk + " MHz";
-            numericUpDownBclk.Text = $"{currentBclk}";
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { if (!shuttingDown) HandleError(ex.Message); }
         }
 
         private void BulkMarginChangeHandler(int ccd, int step = 1)
@@ -2751,7 +2760,7 @@ namespace ZenStatesDebugTool
         {
             List<Tuple<int, int>> margins = new List<Tuple<int, int>>();
 
-            if (cpu.smu.Rsmu.SMU_MSG_SetDldoPsmMargin != 0)
+            if ((cpu.smu.Rsmu.SMU_MSG_SetDldoPsmMargin != 0 || cpu.smu.Mp1Smu.SMU_MSG_SetDldoPsmMargin != 0))
             {
                 for (var i = 0; i < GetPhysicalCoreCount(); i++)
                 {
@@ -2788,7 +2797,7 @@ namespace ZenStatesDebugTool
         {
             var profile = new Profile { Name = name };
 
-            if (cpu.smu.Rsmu.SMU_MSG_SetDldoPsmMargin != 0)
+            if ((cpu.smu.Rsmu.SMU_MSG_SetDldoPsmMargin != 0 || cpu.smu.Mp1Smu.SMU_MSG_SetDldoPsmMargin != 0))
             {
                 for (var i = 0; i < GetPhysicalCoreCount(); i++)
                 {
@@ -2821,7 +2830,7 @@ namespace ZenStatesDebugTool
         {
             if (profile == null) return;
 
-            if (profile.CoMargins != null && cpu.smu.Rsmu.SMU_MSG_SetDldoPsmMargin != 0)
+            if (profile.CoMargins != null && (cpu.smu.Rsmu.SMU_MSG_SetDldoPsmMargin != 0 || cpu.smu.Mp1Smu.SMU_MSG_SetDldoPsmMargin != 0))
             {
                 foreach (var kv in profile.CoMargins)
                 {
@@ -2904,7 +2913,7 @@ namespace ZenStatesDebugTool
             {
                 HandleError("Could not load saved profile!");
             }
-            
+
             return margins;
         }
 
@@ -2913,7 +2922,7 @@ namespace ZenStatesDebugTool
             numericUpDownFmax.Tag = null;
             List<Tuple<int, int>> margins = LoadCOProfile();
 
-            if (margins.Count > 0 && cpu.smu.Rsmu.SMU_MSG_SetDldoPsmMargin != 0)
+            if (margins.Count > 0 && (cpu.smu.Rsmu.SMU_MSG_SetDldoPsmMargin != 0 || cpu.smu.Mp1Smu.SMU_MSG_SetDldoPsmMargin != 0))
             {
                 for (var i = 0; i < margins.Count; i++)
                 {
@@ -3005,7 +3014,12 @@ namespace ZenStatesDebugTool
                 string logPath = Path.Combine(profilesPath, "apply.log");
                 if (!File.Exists(logPath)) return;
 
-                string[] lines = File.ReadAllLines(logPath);
+                string[] lines;
+                using (var stream = new FileStream(logPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                {
+                    stream.Seek(Math.Max(0, stream.Length - 65536), SeekOrigin.Begin);
+                    using (var reader = new StreamReader(stream)) lines = reader.ReadToEnd().Split('\n');
+                }
                 for (int i = lines.Length - 1; i >= 0; i--)
                 {
                     if (!string.IsNullOrWhiteSpace(lines[i]))
@@ -3053,7 +3067,8 @@ namespace ZenStatesDebugTool
                      .OfType<WmiCmdListItem>()
                      .FirstOrDefault(item => item.text.Contains("Software Downcore Config"));
 
-            if (cmdItem != null) {
+            if (cmdItem != null)
+            {
                 WMI.RunCommand(classInstance, cmdItem.value, ccd0);
                 WMI.RunCommand(classInstance, cmdItem.value, ccd1);
             }
@@ -3151,22 +3166,9 @@ namespace ZenStatesDebugTool
             panelX3D.Enabled = !manual;
         }
 
-        private void ButtonApplyFMax_Click(object sender, EventArgs e)
+        private async void ButtonApplyFMax_Click(object sender, EventArgs e)
         {
-            // Defensive: the button is disabled on unsupported CPUs (see InitForm).
-            if (!_fmaxSupported)
-            {
-                SetStatusText("FMax is not supported on this CPU.");
-                return;
-            }
-
-            uint targetFmax = (uint)numericUpDownFmax.Value;
-            uint? newFmax = Hardware.Locked(() => cpu.SetFMax(targetFmax) ? (uint?)cpu.GetFMax() : null);
-            if (newFmax.HasValue) {
-                // Only reflect the read-back when it's usable; otherwise keep the applied
-                // value instead of wiping it to 0 on CPUs without a working FMax read-back.
-                SetFmaxFromReadback(newFmax.Value);
-            }
+            await ApplyTuningAsync(new Profile { Fmax = numericUpDownFmax.Value });
         }
 
         private void ButtonPCIRangeMonitor_Click(object sender, EventArgs e)
@@ -3174,7 +3176,8 @@ namespace ZenStatesDebugTool
             TryConvertToUint(textBoxPciStartReg.Text, out uint startAddress);
             TryConvertToUint(textBoxPciEndReg.Text, out uint endAddress);
 
-            new Thread(() => new PCIRangeMonitor(cpu, startAddress, endAddress).ShowDialog()).Start();
+            try { new PCIRangeMonitor(cpu, startAddress, endAddress).Show(this); }
+            catch (Exception ex) { HandleError(ex.Message); }
         }
 
         private async void ButtonDump_Click(object sender, EventArgs e)
@@ -3221,7 +3224,8 @@ namespace ZenStatesDebugTool
                 SetStatusText(name + ": Dumping memory, please wait...");
 
                 var stopwatch = Stopwatch.StartNew();
-                await System.Threading.Tasks.Task.Run(() => MemoryDumper.Dump32BitAddressSpaceAsBytes(cpu, name, startAddress, endAddress));
+                await RunHardwareAsync(() => { MemoryDumper.Dump32BitAddressSpaceAsBytes(cpu, name, startAddress, endAddress); return true; });
+                if (shuttingDown) return;
                 stopwatch.Stop();
 
                 string elapsedTime = $"{stopwatch.Elapsed.TotalSeconds:F2}";
@@ -3230,7 +3234,7 @@ namespace ZenStatesDebugTool
             }
             catch (Exception ex)
             {
-                HandleError($"Memory dump failed: {ex.Message}");
+                if (!shuttingDown) HandleError($"Memory dump failed: {ex.Message}");
             }
             finally
             {
@@ -3238,63 +3242,27 @@ namespace ZenStatesDebugTool
             }
         }
 
-        private void ButtonRefreshCS_Click(object sender, EventArgs e)
+        private async void ButtonRefreshCS_Click(object sender, EventArgs e)
         {
-            InitCS(showStatus: true);
+            try
+            {
+                var values = await RunHardwareAsync(() => Hardware.Locked(() => cpu.GetAllCurveShaperMargins()));
+                if (!shuttingDown) { ApplyCurveShaperValues(CurveShaperCodec.ResolveDisplay(values, _lastAppliedCurveShaper)); SetStatusText("Curve Shaper read complete; session fallback used if hardware reports no values."); }
+            }
+            catch (Exception ex) { if (!shuttingDown) SetStatusText(ex.Message); }
         }
 
-        private void ButtonApplyCS_Click(object sender, EventArgs e)
+        private async void ButtonApplyCS_Click(object sender, EventArgs e)
         {
-            // Defensive: the tab is removed on unsupported CPUs (see InitCS).
-            if (!_curveShaperSupported)
-            {
-                SetStatusText("Curve Shaper is not supported on this CPU.");
-                return;
-            }
-
-            if (!_hardwareReady)
-            {
-                SetStatusText("Still loading hardware values, please wait...");
-                return;
-            }
-
-            var errorMessages = new List<string>();
-
-            lock (Hardware.Sync)
-            {
-                for (int tier = 0; tier < 5; tier++)
+            var profile = new Profile { CurveShaperTiers = new List<CurveShaperTier>() };
+            for (int tier = 0; tier < 5; tier++)
+                profile.CurveShaperTiers.Add(new CurveShaperTier
                 {
-                    if (cpu.SetCurveShaperMargin(
-                            marginHigh: (int)CsGrid[tier][2].Value,
-                            marginMedium: (int)CsGrid[tier][1].Value,
-                            marginLow: (int)CsGrid[tier][0].Value, tier) != SMU.Status.OK)
-                    {
-                        errorMessages.Add($"Failed to set Curve Shaper margins for frequency tier {tier} ({CsTierNames[tier]}).");
-                    }
-                }
-            }
-
-            if (errorMessages.Count == 0)
-            {
-                // Remember what we applied so Refresh can show it on CPUs that don't report
-                // Curve Shaper margins back (GetAllCurveShaperMargins returns 0 there).
-                _lastAppliedCurveShaper = new uint[5];
-                for (int tier = 0; tier < 5; tier++)
-                    _lastAppliedCurveShaper[tier] = CurveShaperCodec.Pack(
-                        (int)CsGrid[tier][0].Value,
-                        (int)CsGrid[tier][1].Value,
-                        (int)CsGrid[tier][2].Value);
-
-                SetStatusText("Curve Shaper margins applied successfully.");
-            }
-            else
-            {
-                PrependResult(string.Join(Environment.NewLine, errorMessages) + Environment.NewLine);
-                SetStatusText("One or more errors occurred while applying Curve Shaper margins.");
-            }
-
-            // Do NOT re-read here: GetAllCurveShaperMargins returns 0 on this hardware, which
-            // would wipe the values just entered. Keep what was applied (use Refresh to re-read).
+                    Low = (int)CsGrid[tier][0].Value,
+                    Medium = (int)CsGrid[tier][1].Value,
+                    High = (int)CsGrid[tier][2].Value
+                });
+            await ApplyTuningAsync(profile);
         }
     }
 }

@@ -20,18 +20,19 @@ namespace ZenStatesDebugTool
     // UI thread — if the UI thread is itself waiting on the lock that is a cross-thread
     // deadlock. Background loops therefore lock only their hardware reads and marshal UI
     // updates (BeginInvoke / post-lock Invoke) outside the locked region.
-    public static class Hardware
+    public static partial class Hardware
     {
         public static readonly object Sync = new object();
+        private static readonly HardwareLifetime lifetime = new HardwareLifetime(Sync);
 
         public static void Locked(Action action)
         {
-            lock (Sync) action();
+            lock (Sync) { ThrowIfClosing(); action(); }
         }
 
         public static T Locked<T>(Func<T> func)
         {
-            lock (Sync) return func();
+            lock (Sync) { ThrowIfClosing(); return func(); }
         }
     }
 }

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using ZenStatesDebugTool.Profiles;
 
 namespace ZenStatesDebugTool
@@ -7,6 +8,17 @@ namespace ZenStatesDebugTool
     // A tier word packs three signed-byte margins: low in bits 8-15, med 16-23, high 24-31.
     public static class CurveShaperCodec
     {
+        public static uint[] MergeAccepted(uint[] previous, TuningResult result)
+        {
+            uint[] merged = previous == null ? null : (uint[])previous.Clone();
+            foreach (var row in result.Rows.Where(r => r.Request.Kind == TuningKind.CurveShaper && r.IsAccepted))
+            {
+                if (merged == null) merged = new uint[5];
+                var request = row.Request;
+                merged[request.Index] = Pack((int)request.Value, request.Medium, request.High);
+            }
+            return merged;
+        }
         // One margin byte (0-255) -> signed margin (-128..127). Matches the old
         // ConvertMarginToInt; the unchecked cast is required (default context narrows uint->sbyte).
         public static int UnpackMargin(uint value) => (sbyte)(unchecked(value));

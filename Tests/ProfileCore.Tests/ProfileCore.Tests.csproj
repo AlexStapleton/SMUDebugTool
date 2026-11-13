@@ -6,6 +6,11 @@
     <RootNamespace>ProfileCore.Tests</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Drawing" />
+    <Compile Include="..\..\ApplyResultsForm.cs" Link="ApplyResultsForm.cs" />
+    <Compile Include="..\..\TuningResultsPanel.cs" Link="TuningResultsPanel.cs" />
+    <Compile Include="..\..\Utils\HardwareOperationRunner.cs" Link="HardwareOperationRunner.cs" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
@@ -17,7 +22,13 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <!-- Compile the WinForms-free core directly into the test assembly. -->
+    <Compile Include="..\..\Utils\TuningResult.cs" Link="TuningResult.cs" />
+    <Compile Include="..\..\Utils\TuningService.cs" Link="TuningService.cs" />
+    <Compile Include="..\..\Profiles\ProfileApplier.cs" Link="ProfileApplier.cs" />
+    <Compile Include="..\..\Utils\ZenStatesTuningTransport.cs" Link="ZenStatesTuningTransport.cs" />
+    <Compile Include="..\..\Utils\HardwareLifetime.cs" Link="HardwareLifetime.cs" />
+    <Compile Include="..\..\Utils\Hardware.cs" Link="Hardware.cs" />
+    <Compile Include="..\..\Utils\AddressRange.cs" Link="AddressRange.cs" />
     <Compile Include="..\..\Profiles\Profile.cs" Link="Profile.cs" />
     <Compile Include="..\..\Profiles\ProfileManager.cs" Link="ProfileManager.cs" />
     <Compile Include="..\..\Utils\UiSettings.cs" Link="UiSettings.cs" />
