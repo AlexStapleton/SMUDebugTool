@@ -10,9 +10,10 @@ namespace ZenStatesDebugTool
         public TuningResultsPanel(TextBox log)
         {
             Dock = DockStyle.Fill;
-            var bar = new Panel { Dock = DockStyle.Top, Height = 46 };
+            var bar = new Panel { Dock = DockStyle.Top, Height = 26 };
             var details = new Button { Text = "Details", Dock = DockStyle.Right, Width = 65 };
-            summary = new Label { Text = "No apply results yet.", Dock = DockStyle.Fill, AutoEllipsis = true };
+            summary = new Label { Text = "No apply results yet.", Dock = DockStyle.Fill, AutoEllipsis = true,
+                TextAlign = System.Drawing.ContentAlignment.MiddleLeft };
             details.Click += (sender, args) => { if (Result != null) new ApplyResultsForm(Result).Show(FindForm()); };
             bar.Controls.Add(summary);
             bar.Controls.Add(details);
