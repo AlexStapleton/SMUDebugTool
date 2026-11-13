@@ -1,5 +1,7 @@
 using System.Threading;
 using ZenStates.Core;
+using ZenStates.Core.Hardware;
+using ZenStates.Core.Hardware.Smu;
 
 namespace ZenStatesDebugTool.Profiles
 {

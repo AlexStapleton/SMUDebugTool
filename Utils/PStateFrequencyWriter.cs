@@ -51,6 +51,17 @@ namespace ZenStatesDebugTool
             var result = new PStateWriteResult { Status = PStateWriteStatus.InvalidInput };
             result.Error = PStateMath.Validate(layout, fid, did);
             if (result.Error != null) return result;
+            return ApplyFields(targets, affinity, stateId, layout,
+                original => { PStateMath.TryWithFrequency(original, layout, fid, did, out ulong updated, out _); return updated; },
+                PStateMath.FrequencyMask(layout), read, write, prepare);
+        }
+
+        internal static PStateWriteResult ApplyFields(IReadOnlyList<ProcessorTarget> targets,
+            IProcessorAffinity affinity, int stateId, PStateLayout layout, Func<ulong, ulong> update, ulong mask,
+            Func<uint, ulong?> read, Func<uint, ulong, bool> write, Func<bool> prepare)
+        {
+            var result = new PStateWriteResult { Status = PStateWriteStatus.InvalidInput };
+            if (mask == 0 || layout == PStateLayout.Unknown) { result.Error = "Unknown register layout."; return result; }
             if (stateId < 0 || stateId >= PStateMath.Count || targets == null || targets.Count == 0)
             {
                 result.Error = "Select a P-state and at least one processor target.";
@@ -78,7 +89,9 @@ namespace ZenStatesDebugTool
                             result.Error = "The P-state is disabled (PstateEn=0).";
                             return result;
                         }
-                        PStateMath.TryWithFrequency(result.Original.Value, layout, fid, did, out ulong updated, out _);
+                        ulong updated = update(result.Original.Value);
+                        if ((updated & ~mask) != (result.Original.Value & ~mask))
+                        { result.Error = "Update changes unrelated register fields."; return result; }
                         result.Requested = updated;
                         if (prepare != null && !prepare())
                         {
@@ -99,11 +112,10 @@ namespace ZenStatesDebugTool
                             result.Error = "The write completed, but the register could not be read back.";
                             return result;
                         }
-                        ulong mask = PStateMath.FrequencyMask(layout);
                         if ((result.Observed.Value & mask) != (updated & mask))
                         {
                             result.Status = PStateWriteStatus.ReadbackMismatch;
-                            result.Error = "The frequency read back does not match the requested value.";
+                            result.Error = "The register field read back does not match the requested value.";
                             return result;
                         }
                     }

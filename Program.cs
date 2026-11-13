@@ -2,6 +2,8 @@ using System;
 using System.IO;
 using System.Windows.Forms;
 using ZenStates.Core;
+using ZenStates.Core.Hardware;
+using ZenStates.Core.Hardware.Smu;
 using ZenStatesDebugTool.Profiles;
 
 namespace ZenStatesDebugTool
@@ -26,13 +28,8 @@ namespace ZenStatesDebugTool
             Application.ThreadException += ApplicationThreadException;
             try
             {
-                Form MainForm = new SettingsForm();
-                string appString = $"{Application.ProductName} {Application.ProductVersion.Substring(0, Application.ProductVersion.LastIndexOf('.'))}";
-#if DEBUG
-                appString += " (debug)";
-#endif
-                MainForm.Text = appString;
-                Application.Run(MainForm);
+                UiText.SetLanguage(new UiSettingsManager(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "settings.json")).Load().Language);
+                Application.Run(new StartupForm());
             }
             catch (Exception ex)
             {
@@ -74,6 +71,7 @@ namespace ZenStatesDebugTool
             }
 
             Cpu cpu = null;
+            DriverSession session = null;
             try
             {
                 var manager = new ProfileManager(profilesPath);
@@ -84,7 +82,7 @@ namespace ZenStatesDebugTool
                     return 1;
                 }
 
-                cpu = new Cpu();
+                cpu = DriverSession.CreateCpu(null, out session);
                 var result = new ProfileApplier().Apply(profile, cpu);
                 Log(logPath, TuningResultFormatter.LogLine(profileName, result));
                 return result.ExitCode;
@@ -96,7 +94,8 @@ namespace ZenStatesDebugTool
             }
             finally
             {
-                cpu?.Dispose();
+                try { cpu?.Dispose(); session?.Dispose(); }
+                catch (Exception ex) { Log(logPath, "Driver disposal failed: " + ex.Message); }
             }
         }
 

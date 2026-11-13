@@ -9,6 +9,7 @@ namespace ZenStatesDebugTool
         public ApplyResultsForm(TuningResult result)
         {
             Text = $"{result.Label} — {result.StartedUtc:u} — v{result.ApplicationVersion}: {result.Summary}";
+            UiLayout.Configure(this, new System.Drawing.Size(650, 300));
             Width = 1100;
             Height = 500;
             MinimumSize = new System.Drawing.Size(650, 300);
@@ -34,10 +35,12 @@ namespace ZenStatesDebugTool
                     ReadStatus = Hex(r.Read?.Status),
                     ReadbackSource = r.Read?.Source ?? "unavailable",
                     Target = Hex(r.Write?.TargetMask),
+                    PhysicalTarget = r.Write?.TargetIdentity,
                     TimeUtc = r.TimestampUtc.ToString("O"),
                     r.Reason
                 }).ToList()
             };
+            grid.ColumnAdded += (s, e) => e.Column.HeaderText = UiText.T(e.Column.DataPropertyName);
             var copy = new Button { Text = "Copy report", Dock = DockStyle.Bottom, Height = 32 };
             copy.Click += (s, e) => { try { Clipboard.SetText(TuningResultFormatter.Report(result)); } catch (Exception ex) { MessageBox.Show(this, ex.Message, "Copy report"); } };
             Controls.Add(grid);

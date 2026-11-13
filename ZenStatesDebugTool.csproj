@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+<Project Sdk="Microsoft.NET.Sdk">
+
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
@@ -8,7 +8,10 @@
     <OutputType>WinExe</OutputType>
     <RootNamespace>ZenStatesDebugTool</RootNamespace>
     <AssemblyName>SMUDebugTool</AssemblyName>
-    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <TargetFramework>net48</TargetFramework>
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <FileAlignment>512</FileAlignment>
     <Deterministic>true</Deterministic>
     <TargetFrameworkProfile />
@@ -46,6 +49,20 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Utils\PStateVidControls.cs" />
+    <Compile Include="ProfileTargetsForm.cs" />
+    <Compile Include="Profiles\ProfileTargetReview.cs" />
+    <EmbeddedResource Include="Resources\UiStrings.resx" />
+    <EmbeddedResource Include="Resources\UiStrings.zh-CN.resx" />
+    <Compile Include="StartupForm.cs" />
+    <Compile Include="DriverMaintenanceForm.cs" />
+    <Compile Include="SettingsForm.PStateVid.cs" />
+    <Compile Include="Utils\PStateVidWriter.cs" />
+    <Compile Include="Utils\DriverMaintenance.cs" />
+    <Compile Include="Utils\UiText.cs" />
+    <Compile Include="Utils\UiLayout.cs" />
+    <Compile Include="Utils\CoreLibraryAdapter.cs" />
+    <Compile Include="Utils\TopologySnapshot.cs" />
     <Compile Include="Utils\HardwareOperationRunner.cs" />
     <Reference Include="Microsoft.VisualBasic" />
     <PackageReference Include="TaskScheduler" Version="2.10.1" GeneratePathProperty="true" />
@@ -94,10 +111,7 @@
     <Reference Include="System.Drawing" />
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Xml" />
-    <Reference Include="ZenStates-Core, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <SpecificVersion>False</SpecificVersion>
-      <HintPath>Prebuilt\ZenStates-Core.dll</HintPath>
-    </Reference>
+    <ProjectReference Include="vendor\ZenStates-Core.Net48.csproj"><Name>ZenStates-Core</Name></ProjectReference>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Utils\TuningResult.cs" />
@@ -212,5 +226,11 @@
       <Link>inpoutx64.dll</Link>
     </None>
   </ItemGroup>
-  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <ItemGroup>
+    <Content Include="$(PkgTaskScheduler)\lib\net452\**\*.resources.dll">
+      <Link>%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
 </Project>

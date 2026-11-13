@@ -4,6 +4,8 @@ using System.ComponentModel;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using ZenStates.Core;
+using ZenStates.Core.Hardware;
+using ZenStates.Core.Hardware.Smu;
 
 namespace ZenStatesDebugTool
 {
@@ -33,6 +35,7 @@ namespace ZenStatesDebugTool
             nameMap = SmuCommandNames.Build(SmuDecodeAdapter.ReadMessages(cpu.smu));
             SMU_ADDR_MSG = addrMsg; SMU_ADDR_ARG = addrArg; SMU_ADDR_RSP = addrRsp;
             InitializeComponent();
+            UiLayout.Configure(this, new System.Drawing.Size(500, 300));
             labelCmdAddr.Text = $"0x{addrMsg:X8}";
             labelRspAddr.Text = $"0x{addrRsp:X8}";
             labelArgAddr.Text = $"0x{addrArg:X8}";

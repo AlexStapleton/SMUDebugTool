@@ -15,6 +15,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using ZenStates.Core;
+using ZenStates.Core.Hardware;
+using ZenStates.Core.Hardware.Smu;
 using ZenStatesDebugTool.Profiles;
 using ZenStatesDebugTool.Properties;
 using Application = System.Windows.Forms.Application;
@@ -31,6 +33,7 @@ namespace ZenStatesDebugTool
         private readonly NUMAUtil _numaUtil;
         private readonly Cpu cpu;
         private readonly HardwareService hardware;
+        private readonly DriverSession driverSession;
         private DecodeContext decodeContext = DecodeContext.None;
         private IReadOnlyDictionary<uint, string> smuNameMap;
         List<SmuAddressSet> matches = new List<SmuAddressSet>();
@@ -54,9 +57,12 @@ namespace ZenStatesDebugTool
         // Controls.Find tree-walk for every core on each access.
         private readonly Dictionary<int, CheckBox> coreCheckBoxes = new Dictionary<int, CheckBox>();
 
-        public SettingsForm()
+        public SettingsForm(Cpu initializedCpu, DriverSession session)
         {
             InitializeComponent();
+            cpu = initializedCpu;
+            driverSession = session;
+            UiLayout.Configure(this, new Size(720, 550));
             _numaUtil = new NUMAUtil();
             textBoxResult.Text = $@"Detected NUMA nodes. ({_numaUtil.HighestNumaNode + 1})" + textBoxResult.Text;
 
@@ -69,7 +75,6 @@ namespace ZenStatesDebugTool
                 profileManager.EnsureDirectory();
                 profileManager.MigrateLegacyIfNeeded();
 
-                cpu = new Cpu();
                 hardware = new HardwareService(cpu);
 
                 InitForm();
@@ -81,6 +86,7 @@ namespace ZenStatesDebugTool
                 MessageBox.Show(ex.Message, Resources.Error);
                 // Startup workers have not been launched until OnShown.
                 cpu?.Dispose();
+                driverSession?.Dispose();
                 shutdownComplete = true;
                 Shown += (sender, args) => Close();
             }
@@ -104,7 +110,7 @@ namespace ZenStatesDebugTool
             tabControl1.Enabled = false;
             foreach (Form owned in OwnedForms) owned.Close();
             SetStatusText("Waiting for the current hardware command to finish...");
-            try { await Hardware.ShutdownAsync(() => cpu?.Dispose()); }
+            try { await Hardware.ShutdownAsync(() => { cpu?.Dispose(); driverSession?.Dispose(); }); }
             catch (Exception ex) { PrependResult("Driver shutdown: " + ex.Message + Environment.NewLine); }
             shutdownComplete = true;
             Close();
@@ -178,9 +184,9 @@ namespace ZenStatesDebugTool
                 mbVendorInfoLabel.Text = cpu.systemInfo.MbVendor;
                 mbModelInfoLabel.Text = cpu.systemInfo.MbName;
                 biosInfoLabel.Text = cpu.systemInfo.BiosVersion;
-                smuInfoLabel.Text = cpu.systemInfo.SmuVersionString;
+                smuInfoLabel.Text = cpu.systemInfo.SmuVersion.ToString();
                 firmwareInfoLabel.Text = $"{cpu.systemInfo.PatchLevel:X8}";
-                cpuIdLabel.Text = $"{cpu.systemInfo.CpuIdString} ({cpu.info.codeName})";
+                cpuIdLabel.Text = $"{cpu.systemInfo.CpuId} ({cpu.info.codeName})";
                 smuNameMap = SmuCommandNames.Build(SmuDecodeAdapter.ReadMessages(cpu.smu));
                 configInfoLabel.Text = $"{cpu.info.topology.ccds} CCD / {cpu.info.topology.ccxs} CCX / {cpu.systemInfo.PhysicalCoreCount} physical cores";
             }
@@ -275,6 +281,38 @@ namespace ZenStatesDebugTool
             menuStrip = new MenuStrip();
             var viewMenu = new ToolStripMenuItem("View");
             menuStrip.Items.Add(viewMenu);
+            var tools = new ToolStripMenuItem("Tools");
+            tools.DropDownItems.Add("Driver diagnostics and maintenance", null, (sender, args) =>
+            {
+                var environment = new WindowsDriverMaintenanceEnvironment { LocalHandleOpen = !Hardware.IsClosing };
+                var maintenance = new DriverMaintenanceForm(environment, async () =>
+                {
+                    shuttingDown = true;
+                    tabControl1.Enabled = false;
+                    foreach (Form owned in OwnedForms) if (!(owned is DriverMaintenanceForm)) owned.Close();
+                    try { await Hardware.ShutdownAsync(() => { cpu.Dispose(); driverSession?.Dispose(); }); }
+                    finally { shutdownComplete = true; }
+                    environment.LocalHandleOpen = false;
+                    SetStatusText("Hardware session ended. Close the application after maintenance.");
+                });
+                maintenance.Show(this);
+                maintenance.FormClosed += (s, e) => { if (Hardware.IsClosing) Close(); };
+            });
+            tools.DropDownItems.Add("Core mapping", null, (sender, args) => ShowResultForm("Core mapping",
+                "Source: " + hardware.Topology.Source + "\r\nSignature: " + hardware.Topology.Signature + "\r\n" + hardware.Topology.Error + "\r\n" +
+                string.Join("\r\n", hardware.Topology.Targets.Select(t => $"Core {t.Slot}: {t.Identity}; logical {t.LogicalIndex}; mask 0x{t.Mask:X8}"))));
+            menuStrip.Items.Add(tools);
+            var languageMenu = new ToolStripMenuItem("Language");
+            foreach (var language in new[] { Tuple.Create("English", "en"), Tuple.Create("简体中文", "zh-CN") })
+                languageMenu.DropDownItems.Add(language.Item1, null, (sender, args) =>
+                {
+                    UiText.SetLanguage(language.Item2);
+                    var manager = new UiSettingsManager(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "settings.json"));
+                    var preferences = manager.Load(); preferences.Language = language.Item2;
+                    try { manager.Save(preferences); } catch (Exception ex) { SetStatusText(ex.Message); }
+                    foreach (Form form in Application.OpenForms) UiText.Apply(form);
+                });
+            menuStrip.Items.Add(languageMenu);
 
             var settingsManager = new UiSettingsManager(
                 Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "settings.json"));
@@ -361,7 +399,7 @@ namespace ZenStatesDebugTool
                             ApplyProchot(prochot);
                             ApplyWmiCommands(wmiItems);
                             _hardwareReady = true;
-                            SetStatusText($"{cpu.info.codeName}. Ready.");
+                            SetStatusText(hardware.Topology.Error == null ? $"{cpu.info.codeName}. Ready." : $"Ready. Per-core controls unavailable: {hardware.Topology.Error}");
                         }
                         catch (Exception ex)
                         {
@@ -437,8 +475,6 @@ namespace ZenStatesDebugTool
             uint cores = (uint)GetPhysicalCoreCount();
             //var performanceOfCores = cpu.info.topology.performanceOfCore;
             uint coresPerGroup = 8;
-            uint logicalIndexGroup1 = 0;
-            uint logicalIndexGroup2 = 0;
 
             for (uint i = 0; i < cores; i++)
             {
@@ -456,17 +492,9 @@ namespace ZenStatesDebugTool
                             control.Enabled = true;
                             control.Checked = true;
 
-                            if (mapIndex == 0) // Group 1
-                            {
-                                control.Tag = $"{logicalIndexGroup1}";
-                                //var performanceOfCore = performanceOfCores[logicalIndexGroup1];
-                                logicalIndexGroup1++;
-                            }
-                            else // Group 2
-                            {
-                                control.Tag = $"{logicalIndexGroup2}";
-                                logicalIndexGroup2++;
-                            }
+                            var target = hardware.Topology.Find((int)i);
+                            control.Tag = hardware.Topology.Targets.Where(t => t.Ccd == target.Ccd)
+                                .OrderBy(t => t.LogicalIndex).TakeWhile(t => t.Slot != target.Slot).Count().ToString(CultureInfo.InvariantCulture);
                         }
                     }
                     catch (Exception e)
@@ -536,14 +564,14 @@ namespace ZenStatesDebugTool
                 return result;
 
             int cores = GetPhysicalCoreCount();
+            var reader = new ZenStatesTuningTransport(cpu);
             for (int i = 0; i < cores; i++)
             {
                 Hardware.ThrowIfClosing();
                 if (!IsCoreEnabled(i))
                     continue;
-                uint? margin = cpu.GetPsmMarginSingleCore(EncodeCoreMarginBitmask(i));
-                if (margin != null)
-                    result[i] = (int)margin;
+                var reply = reader.Read(new TuningRequest { Kind = TuningKind.CurveOptimizer, Index = i });
+                if (reply?.Status == 1 && reply.Direct && reply.Value.HasValue) result[i] = (int)reply.Value.Value;
             }
             return result;
         }
@@ -842,6 +870,16 @@ namespace ZenStatesDebugTool
             {
                 var profile = profileManager.Load(name);
                 if (profile == null) { HandleError($"Profile '{name}' not found."); return; }
+                string inputError = TuningService.ValidateProfileInput(profile);
+                if (inputError != null) throw new InvalidOperationException(inputError);
+                if (hardware.Topology.Validate(profile) != null)
+                {
+                    using (var review = new ProfileTargetsForm(profile, hardware.Topology))
+                    {
+                        if (review.ShowDialog(this) != DialogResult.OK) return;
+                        profile = review.ReviewedProfile;
+                    }
+                }
                 ApplyProfileToUi(profile);
                 SetStatusText($"Profile '{name}' loaded into the form. Use Apply to send it to the CPU.");
             }
@@ -1056,6 +1094,7 @@ namespace ZenStatesDebugTool
 
         private int GetCcdCount()
         {
+            if (hardware.Topology.Targets.Count > 0) return hardware.Topology.Targets.Max(t => t.Ccd) + 1;
             if (cpu.info.topology.ccds > 0)
             {
                 return (int)cpu.info.topology.ccds;
@@ -1066,12 +1105,12 @@ namespace ZenStatesDebugTool
 
         private int GetPhysicalCoreCount()
         {
-            return (int)cpu.info.topology.physicalCores;
+            return hardware.Topology.SlotCount;
         }
 
         private bool IsCoreEnabled(int coreIndex)
         {
-            return CoreTopology.IsCoreEnabled(cpu.info.topology.coreDisableMap, coreIndex);
+            return hardware.Topology.Find(coreIndex) != null;
         }
 
         // True for APU SMU types, which address CO margins by a flat core index.
@@ -1233,6 +1272,7 @@ namespace ZenStatesDebugTool
             for (int i = 0; i < coreCount; i++)
             {
                 var nud = MakeFreqNud();
+                nud.Enabled = IsCoreEnabled(i);
                 nud.Width = 64;
                 freqControls[i] = nud;
                 int gcol = i < rowsPerCol ? 0 : 2;
@@ -1322,7 +1362,8 @@ namespace ZenStatesDebugTool
         {
             if (!_hardwareReady) { SetStatusText("Hardware is still loading."); return; }
             if (!_manualOcSupported || cpu == null || freqControls.Count == 0) return;
-            var values = freqControls.ToDictionary(x => x.Key, x => (int)x.Value.Value);
+            var values = freqControls.Where(x => x.Value.Enabled && IsCoreEnabled(x.Key)).ToDictionary(x => x.Key, x => (int)x.Value.Value);
+            if (values.Count == 0) { SetStatusText("No validated core targets are available for manual OC."); return; }
             try
             {
                 bool ok = await RunHardwareAsync(() => Hardware.Locked(() =>
@@ -1397,7 +1438,8 @@ namespace ZenStatesDebugTool
             uint core = (uint)(coreIndex % 8);
             uint ccd = (uint)(coreIndex / 8);
             uint ccx = (uint)((coreIndex % 8) / 4);
-            return Hardware.Locked(() => cpu.SetFrequencySingleCore(core, ccd, ccx, (uint)mhz));
+            var target = hardware.Topology.Find(coreIndex);
+            return target != null && Hardware.Locked(() => cpu.SetFrequencySingleCore(target.Mask, (uint)mhz));
         }
 
         private void SetStatusText(string status)
@@ -1972,7 +2014,7 @@ namespace ZenStatesDebugTool
                 if (property.Name == "CpuId" || property.Name == "PatchLevel")
                     writer.WriteValue($"{property.GetValue(cpu.systemInfo, null):X8}");
                 else if (property.Name == "SmuVersion")
-                    writer.WriteValue(cpu.systemInfo.SmuVersionString);
+                    writer.WriteValue(cpu.systemInfo.SmuVersion.ToString());
                 else
                     writer.WriteValue(property.GetValue(cpu.systemInfo, null));
             }
@@ -2040,6 +2082,7 @@ namespace ZenStatesDebugTool
 
         private void InitPStateEditor()
         {
+            InitPStateVidEditor();
             pstateIdBox.Items.Clear();
             pstateIdBox.DisplayMember = "";
             pstateIdBox.Enabled = btnPstateRead.Enabled = false;
@@ -2085,6 +2128,7 @@ namespace ZenStatesDebugTool
             pstateDid.Enabled = decodeContext.PStateLayout != PStateLayout.Zen5;
             pstateFrequency.Text = "";
             btnPstateWrite.Enabled = false;
+            if (pstateVid != null) { pstateVid.ReadOnly = true; pstateVid.Text = ""; pstateVidVoltage.Text = ""; pstateVidWrite.Enabled = false; }
         }
 
         private void UpdatePStatePreview()
@@ -2124,6 +2168,9 @@ namespace ZenStatesDebugTool
                 pstateFid.ReadOnly = !value.Enabled;
                 pstateDid.ReadOnly = !value.Enabled || decodeContext.PStateLayout != PStateLayout.FidDid;
                 pstateReadId = value.Enabled ? (int?)item.Id : null;
+                pstateVid.Text = PStateVidMath.Decode(raw, decodeContext.PStateVidEncoding).ToString(CultureInfo.InvariantCulture);
+                pstateVid.ReadOnly = !value.Enabled || decodeContext.PStateVidEncoding == PStateVidEncoding.Unknown;
+                UpdatePStateVidPreview();
                 UpdatePStatePreview();
                 SetStatusText(!value.Enabled ? $"P-state {item.Id} is disabled (PstateEn=0); read only." :
                     !hardware.CanWritePStates ? "P-state read; per-processor writes are unavailable with this core library/process." :
@@ -2515,7 +2562,7 @@ namespace ZenStatesDebugTool
 
         private uint EncodeCoreMarginBitmask(int coreIndex, int coresPerCCD = 8)
         {
-            return CoreTopology.EncodeCoreMarginBitmask(IsApu(), coreIndex, coresPerCCD);
+            return hardware.Topology.Find(coreIndex)?.Mask ?? throw new InvalidOperationException("Core target unavailable.");
         }
 
         private async Task ApplyCO()
@@ -2823,12 +2870,17 @@ namespace ZenStatesDebugTool
             profile.EdcAmps = (int)numericUpDownEdc.Value;
             profile.PboScalar = (int)numericUpDownPboScalar.Value;
 
+            hardware.Topology.Bind(profile);
             return profile;
         }
 
         private void ApplyProfileToUi(Profile profile)
         {
             if (profile == null) return;
+            string topologyError = hardware.Topology.Validate(profile);
+            if (topologyError != null) throw new InvalidOperationException(topologyError);
+            foreach (var entry in coControls)
+                entry.Value.Enabled = IsCoreEnabled(entry.Key) && profile.CoMargins != null && profile.CoMargins.ContainsKey(entry.Key);
 
             if (profile.CoMargins != null && (cpu.smu.Rsmu.SMU_MSG_SetDldoPsmMargin != 0 || cpu.smu.Mp1Smu.SMU_MSG_SetDldoPsmMargin != 0))
             {
@@ -3032,105 +3084,124 @@ namespace ZenStatesDebugTool
             catch { /* never block startup on a log read */ }
         }
 
-        private void ButtonApplyCoreMap_Click(object sender, EventArgs e)
+        private async void ButtonApplyCoreMap_Click(object sender, EventArgs e)
         {
-            uint ccd0 = 0x8000;
-            uint ccd1 = 0x8100;
-
-            for (int i = 0; i < 8; i++)
+            try
             {
-                CheckBox control = GetCoreCheckBox(i);
-                if (control != null && control.Enabled)
+                if (hardware.Topology.Error != null || hardware.Topology.Targets.Any(t => t.Ccd > 1)) { SetStatusText("Downcore controls support only a validated one/two-CCD map."); return; }
+                uint smt = checkBoxSMT.Checked ? 1U : 0U;
+                uint ccd0 = 0x8000;
+                uint ccd1 = 0x8100;
+
+                for (int i = 0; i < 8; i++)
                 {
-                    if (!control.Checked)
+                    CheckBox control = GetCoreCheckBox(i);
+                    if (control != null && control.Enabled)
                     {
-                        int logicalIndex = Convert.ToInt32(control.Tag as string);
-                        ccd0 = Utils.SetBits(ccd0, logicalIndex, 1, 1);
+                        if (!control.Checked)
+                        {
+                            int logicalIndex = Convert.ToInt32(control.Tag as string);
+                            ccd0 = Utils.SetBits(ccd0, logicalIndex, 1, 1);
+                        }
                     }
                 }
-            }
 
-            for (int i = 0; i < 8; i++)
-            {
-                CheckBox control = GetCoreCheckBox(i + 8);
-                if (control != null && control.Enabled)
+                for (int i = 0; i < 8; i++)
                 {
-                    if (!control.Checked)
+                    CheckBox control = GetCoreCheckBox(i + 8);
+                    if (control != null && control.Enabled)
                     {
-                        int logicalIndex = Convert.ToInt32(control.Tag as string);
-                        ccd1 = Utils.SetBits(ccd1, logicalIndex, 1, 1);
+                        if (!control.Checked)
+                        {
+                            int logicalIndex = Convert.ToInt32(control.Tag as string);
+                            ccd1 = Utils.SetBits(ccd1, logicalIndex, 1, 1);
+                        }
                     }
                 }
+
+                var cmdItem = comboBoxAvailableCommands.Items
+                         .OfType<WmiCmdListItem>()
+                         .FirstOrDefault(item => item.text.Contains("Software Downcore Config"));
+
+                if (cmdItem != null)
+                {
+                    await RunHardwareAsync(() => Hardware.Locked(() => WMI.RunCommand(classInstance, cmdItem.value, ccd0)));
+                    await RunHardwareAsync(() => Hardware.Locked(() => WMI.RunCommand(classInstance, cmdItem.value, ccd1)));
+                }
+
+                cmdItem = comboBoxAvailableCommands.Items
+                         .OfType<WmiCmdListItem>()
+                         .FirstOrDefault(item => item.text.Contains("Set SMTEn"));
+
+                if (cmdItem != null)
+                {
+                    await RunHardwareAsync(() => Hardware.Locked(() => WMI.RunCommand(classInstance, cmdItem.value, smt)));
+                }
+
+                ConfirmWindowsRestart();
+
             }
-
-            var cmdItem = comboBoxAvailableCommands.Items
-                     .OfType<WmiCmdListItem>()
-                     .FirstOrDefault(item => item.text.Contains("Software Downcore Config"));
-
-            if (cmdItem != null)
-            {
-                WMI.RunCommand(classInstance, cmdItem.value, ccd0);
-                WMI.RunCommand(classInstance, cmdItem.value, ccd1);
-            }
-
-            cmdItem = comboBoxAvailableCommands.Items
-                     .OfType<WmiCmdListItem>()
-                     .FirstOrDefault(item => item.text.Contains("Set SMTEn"));
-
-            if (cmdItem != null)
-            {
-                WMI.RunCommand(classInstance, cmdItem.value, checkBoxSMT.Checked ? 1u : 0);
-            }
-
-            ConfirmWindowsRestart();
+            catch (Exception ex) { if (!shuttingDown) HandleError(ex.Message); }
         }
 
-        private void Button5_Click(object sender, EventArgs e)
+        private async void Button5_Click(object sender, EventArgs e)
         {
-            var cmdItem = comboBoxAvailableCommands.Items
-                     .OfType<WmiCmdListItem>()
-                     .FirstOrDefault(item => item.text.Contains("Software Downcore Config"));
-
-            if (cmdItem != null)
+            try
             {
-                WMI.RunCommand(classInstance, cmdItem.value, 0x8000);
-                WMI.RunCommand(classInstance, cmdItem.value, 0x81FF);
+                if (hardware.Topology.Error != null || !hardware.Topology.Targets.Any(t => t.Ccd == 0) || !hardware.Topology.Targets.Any(t => t.Ccd == 1) || hardware.Topology.Targets.Any(t => t.Ccd > 1)) { SetStatusText("This preset requires a validated two-CCD map."); return; }
+                var cmdItem = comboBoxAvailableCommands.Items
+                         .OfType<WmiCmdListItem>()
+                         .FirstOrDefault(item => item.text.Contains("Software Downcore Config"));
+
+                if (cmdItem != null)
+                {
+                    await RunHardwareAsync(() => Hardware.Locked(() => WMI.RunCommand(classInstance, cmdItem.value, 0x8000)));
+                    await RunHardwareAsync(() => Hardware.Locked(() => WMI.RunCommand(classInstance, cmdItem.value, 0x81FF)));
+                }
+
+                cmdItem = comboBoxAvailableCommands.Items
+                         .OfType<WmiCmdListItem>()
+                         .FirstOrDefault(item => item.text.Contains("Set SMTEn"));
+
+                if (cmdItem != null)
+                {
+                    await RunHardwareAsync(() => Hardware.Locked(() => WMI.RunCommand(classInstance, cmdItem.value, 0)));
+                }
+
+                ConfirmWindowsRestart();
+
             }
-
-            cmdItem = comboBoxAvailableCommands.Items
-                     .OfType<WmiCmdListItem>()
-                     .FirstOrDefault(item => item.text.Contains("Set SMTEn"));
-
-            if (cmdItem != null)
-            {
-                WMI.RunCommand(classInstance, cmdItem.value, 0);
-            }
-
-            ConfirmWindowsRestart();
+            catch (Exception ex) { if (!shuttingDown) HandleError(ex.Message); }
         }
 
-        private void Button6_Click(object sender, EventArgs e)
+        private async void Button6_Click(object sender, EventArgs e)
         {
-            var cmdItem = comboBoxAvailableCommands.Items
-                     .OfType<WmiCmdListItem>()
-                     .FirstOrDefault(item => item.text.Contains("Software Downcore Config"));
-
-            if (cmdItem != null)
+            try
             {
-                WMI.RunCommand(classInstance, cmdItem.value, 0x8000);
-                WMI.RunCommand(classInstance, cmdItem.value, 0x8100);
+                if (hardware.Topology.Error != null || !hardware.Topology.Targets.Any(t => t.Ccd == 0) || !hardware.Topology.Targets.Any(t => t.Ccd == 1) || hardware.Topology.Targets.Any(t => t.Ccd > 1)) { SetStatusText("This preset requires a validated two-CCD map."); return; }
+                var cmdItem = comboBoxAvailableCommands.Items
+                         .OfType<WmiCmdListItem>()
+                         .FirstOrDefault(item => item.text.Contains("Software Downcore Config"));
+
+                if (cmdItem != null)
+                {
+                    await RunHardwareAsync(() => Hardware.Locked(() => WMI.RunCommand(classInstance, cmdItem.value, 0x8000)));
+                    await RunHardwareAsync(() => Hardware.Locked(() => WMI.RunCommand(classInstance, cmdItem.value, 0x8100)));
+                }
+
+                cmdItem = comboBoxAvailableCommands.Items
+                         .OfType<WmiCmdListItem>()
+                         .FirstOrDefault(item => item.text.Contains("Set SMTEn"));
+
+                if (cmdItem != null)
+                {
+                    await RunHardwareAsync(() => Hardware.Locked(() => WMI.RunCommand(classInstance, cmdItem.value, 1)));
+                }
+
+                ConfirmWindowsRestart();
+
             }
-
-            cmdItem = comboBoxAvailableCommands.Items
-                     .OfType<WmiCmdListItem>()
-                     .FirstOrDefault(item => item.text.Contains("Set SMTEn"));
-
-            if (cmdItem != null)
-            {
-                WMI.RunCommand(classInstance, cmdItem.value, 1);
-            }
-
-            ConfirmWindowsRestart();
+            catch (Exception ex) { if (!shuttingDown) HandleError(ex.Message); }
         }
 
         private void ConfirmWindowsRestart()

@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>ZenStates-Core</AssemblyName>
+    <RootNamespace>ZenStates.Core</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <DefineConstants>$(DefineConstants);NET20</DefineConstants>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <EnableDefaultEmbeddedResourceItems>false</EnableDefaultEmbeddedResourceItems>
+    <CheckForOverflowUnderflow>true</CheckForOverflowUnderflow>
+    <Version>1.92.0</Version>
+    <InformationalVersion>1.92.0+3bb1dad5.net48-compat1</InformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <Company>irusanov</Company>
+    <Product>ZenStates.Core</Product>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System.Management" />
+    <Reference Include="System.ServiceProcess" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <Compile Include="ZenStates-Core\**\*.cs" Exclude="ZenStates-Core\Cpu.cs;ZenStates-Core\**\obj\**;ZenStates-Core\**\bin\**" />
+    <Compile Include="CoreCurrentProcessor.cs" />
+    <Compile Include="$(IntermediateOutputPath)Cpu.cs" />
+    <EmbeddedResource Include="ZenStates-Core\Resources\PawnIo\*.bin">
+      <LogicalName>ZenStates.Core.Resources.PawnIo.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+  <Target Name="PreparePinnedCore" BeforeTargets="CoreCompile">
+    <Exec Command="powershell.exe -NoProfile -File &quot;$(MSBuildThisFileDirectory)..\scripts\Prepare-Core.ps1&quot; -Source &quot;$(MSBuildThisFileDirectory)ZenStates-Core&quot; -Output &quot;$(MSBuildProjectDirectory)\$(IntermediateOutputPath)Cpu.cs&quot;" />
+  </Target>
+</Project>

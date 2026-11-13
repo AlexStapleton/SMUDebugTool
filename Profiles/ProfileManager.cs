@@ -44,7 +44,10 @@ namespace ZenStatesDebugTool.Profiles
             if (!IsValidName(name)) throw new ArgumentException("Invalid profile name.", nameof(name));
             var path = PathFor(name);
             if (!File.Exists(path)) return null;
+            if (new FileInfo(path).Length > 1024 * 1024) throw new InvalidDataException("Profile exceeds the 1 MiB limit.");
             var profile = JsonConvert.DeserializeObject<Profile>(File.ReadAllText(path));
+            if (profile?.CoMargins?.Count > 128 || profile?.CoreBindings?.Count > 128 || profile?.CurveShaperTiers?.Count > 5)
+                throw new InvalidDataException("Profile contains more targets or tiers than the application supports.");
             if (profile != null) profile.Name = name; // filename is the source of truth
             return profile;
         }

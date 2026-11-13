@@ -5,6 +5,8 @@ using System.Windows.Forms;
 using System.Globalization;
 using System.Threading.Tasks;
 using ZenStates.Core;
+using ZenStates.Core.Hardware;
+using ZenStates.Core.Hardware.Smu;
 
 namespace ZenStatesDebugTool
 {
@@ -115,6 +117,7 @@ namespace ZenStatesDebugTool
         {
             CPU = cpu;
             InitializeComponent();
+            UiLayout.Configure(this, new System.Drawing.Size(500, 300));
             dataGridView1.DataSource = list;
             PowerCfgTimer.Interval = 2000;
             PowerCfgTimer.Tick += PowerCfgTimer_Tick;
