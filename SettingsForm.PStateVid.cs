@@ -13,6 +13,7 @@ namespace ZenStatesDebugTool
         {
             var controls = new PStateVidControls(tableLayoutPanel5);
             pstateVid = controls.Value; pstateVidVoltage = controls.Voltage; pstateVidWrite = controls.Write;
+            PStateEditorLayout.AttachBaseClock(tabPagePstates, tableLayoutPanel5, numericUpDownBclk, labelBCLK, buttonBCLKApply);
             pstateVid.TextChanged += (s, e) => UpdatePStateVidPreview();
             pstateVidWrite.Click += WritePStateVid_Click;
         }

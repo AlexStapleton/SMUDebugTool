@@ -1,7 +1,7 @@
 # Tuning edit tracking and apply previews
 
 Scope: the profile-supported Curve Optimizer, FMax, Curve Shaper and PBO limit editors.
-Every GUI apply for those settings previews a frozen request set. Headless startup
+GUI Apply sends a frozen request set once. Preview changes is optional. Headless startup
 retains its existing noninteractive contract and validation. Register/manual-OC editors
 retain their dedicated workflows.
 
@@ -17,7 +17,7 @@ retain their dedicated workflows.
 - Apply changes filters the current enabled editor snapshot by baseline. A Curve
   Shaper tier is one atomic three-band request. Preserve physical core bindings and
   sparse tier indices. Apply all retains its explicit whole-form scope.
-- Preview previous/requested values, baseline source, saved value, last CPU report and
+- The optional preview shows previous/requested values, baseline source, saved value, last CPU report and
   send/leave-unchanged action. Validate before showing, then execute exactly the
   approved snapshot. Opening or cancelling preview does not read or write hardware.
 - Saving changes saved-value metadata only. Loading a profile creates local edits.
@@ -26,7 +26,8 @@ retain their dedicated workflows.
   clears pending edits; accepted-but-unverified values are explicitly labeled.
   An edit made while a command runs survives its result.
 - Keep the last 20 actions in memory as detached result snapshots, newest first.
-  Selecting history only changes the displayed report; it cannot replay a request.
+  History opens in a separate wrapping table; Details cannot replay a request and
+  main results stay on the latest action.
 
 Validation: pure tests for snapshot isolation, sparse deltas/bindings, draft/saved/CPU
   provenance, partial outcomes and history bounds; STA UI tests for highlight/discard,

@@ -50,6 +50,12 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="TuningPreviewForm.cs" />
+    <Compile Include="TuningHistoryForm.cs" />
+    <Compile Include="SettingsForm.Acpi.cs" />
+    <Compile Include="SettingsForm.Guidance.cs" />
+    <Compile Include="Utils\TabGuidance.cs" />
+    <Compile Include="Utils\AcpiCommandHelp.cs" />
+    <Compile Include="Utils\AcpiCommandControls.cs" />
     <Compile Include="SettingsForm.TuningEdits.cs" />
     <Compile Include="Utils\TuningEditControls.cs" />
     <Compile Include="Utils\TuningEditSession.cs" />

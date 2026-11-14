@@ -159,10 +159,18 @@ namespace ProfileCore.Tests
                     panel.ShowResult(result); result.Rows[0].Request.Value = 999;
                 }
                 Assert.Equal(20, panel.HistoryCount);
-                var selector = panel.Controls.OfType<ComboBox>().Single();
-                Assert.Equal(20, selector.Items.Count); Assert.Equal(24, panel.Result.Rows[0].Request.Value);
-                selector.SelectedIndex = 19;
-                Assert.Equal("Action 5", panel.Result.Label); Assert.Equal(5, panel.Result.Rows[0].Request.Value);
+                Assert.Empty(panel.Controls.OfType<ComboBox>());
+                ((Button)panel.Controls.Find("buttonTuningHistory", true).Single()).PerformClick();
+                using (var history = form.OwnedForms.OfType<TuningHistoryForm>().Single()) {
+                    Application.DoEvents();
+                    var grid = history.Controls.OfType<DataGridView>().Single();
+                    Assert.Equal(20, grid.Rows.Count);
+                    Assert.Equal("Action 5", grid.Rows[19].Cells["Action"].Value);
+                    Assert.Contains("5 W", grid.Rows[19].Cells["Result"].Value.ToString());
+                    grid.CurrentCell = grid.Rows[19].Cells["Action"];
+                    Assert.Equal(DataGridViewTriState.True, grid.DefaultCellStyle.WrapMode);
+                }
+                Assert.Equal("Action 24", panel.Result.Label); Assert.Equal(24, panel.Result.Rows[0].Request.Value);
                 Assert.Equal(20, panel.HistoryCount);
                 Assert.True(panel.Controls.OfType<DataGridView>().Single().ReadOnly);
             }

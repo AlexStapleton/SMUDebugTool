@@ -37,6 +37,14 @@ namespace ZenStatesDebugTool
         {
             await ApplyTuningAsync(editControls.Session.Changes(GatherProfileFromUi(CurrentProfileName)), "Apply changes");
         }
+        private async void PreviewChanges_Click(object sender, EventArgs e)
+        {
+            if (!_hardwareReady || shuttingDown || hardwareOperation) { SetStatusText("Hardware is still loading or busy."); return; }
+            var profile = editControls.Session.Changes(GatherProfileFromUi(CurrentProfileName));
+            if (TuningService.RequestsFromProfile(profile).Count == 0) { SetStatusText(UiText.T("No pending changes to apply.")); return; }
+            using (var preview = new TuningPreviewForm(profile, editControls.Session, "Apply changes"))
+                if (preview.ShowDialog(this) == DialogResult.OK) await ApplyTuningAsync(preview.ApprovedProfile, "Apply changes");
+        }
         private void DiscardEdits_Click(object sender, EventArgs e)
         {
             editControls.Discard();
