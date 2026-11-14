@@ -415,4 +415,91 @@
     <value>档位</value>
   </data>
   <data name="sent without readback" xml:space="preserve"><value>已发送但无法回读</value></data>
+  <data name="{0} pending settings. Yellow fields are local edits." xml:space="preserve">
+    <value>{0} 项待应用设置。黄色字段为本地编辑。</value>
+  </data>
+  <data name="Action" xml:space="preserve">
+    <value>操作</value>
+  </data>
+  <data name="Apply cancelled; no commands sent." xml:space="preserve">
+    <value>已取消应用；未发送命令。</value>
+  </data>
+  <data name="Apply changes" xml:space="preserve">
+    <value>应用更改</value>
+  </data>
+  <data name="Apply preview" xml:space="preserve">
+    <value>应用预览</value>
+  </data>
+  <data name="Apply selected settings" xml:space="preserve">
+    <value>应用所选设置</value>
+  </data>
+  <data name="Apply these settings" xml:space="preserve">
+    <value>应用这些设置</value>
+  </data>
+  <data name="Baseline" xml:space="preserve">
+    <value>基准值</value>
+  </data>
+  <data name="Cancel" xml:space="preserve">
+    <value>取消</value>
+  </data>
+  <data name="CPU readback" xml:space="preserve">
+    <value>CPU 回读值</value>
+  </data>
+  <data name="CPU report; unverified" xml:space="preserve">
+    <value>CPU 报告值；未经验证</value>
+  </data>
+  <data name="CPU reported" xml:space="preserve">
+    <value>CPU 报告值</value>
+  </data>
+  <data name="CpuReported" xml:space="preserve">
+    <value>CPU 报告值</value>
+  </data>
+  <data name="Discard edits" xml:space="preserve">
+    <value>放弃编辑</value>
+  </data>
+  <data name="Edited locally" xml:space="preserve">
+    <value>已在本地编辑</value>
+  </data>
+  <data name="Edits discarded locally; no commands sent." xml:space="preserve">
+    <value>已在本地放弃编辑；未发送命令。</value>
+  </data>
+  <data name="Initial editor value; not a CPU read" xml:space="preserve">
+    <value>编辑器初始值；并非 CPU 读取值</value>
+  </data>
+  <data name="Last sent; unverified" xml:space="preserve">
+    <value>上次发送值；未经验证</value>
+  </data>
+  <data name="Leave unchanged (0)" xml:space="preserve">
+    <value>保持不变 (0)</value>
+  </data>
+  <data name="No pending changes to apply." xml:space="preserve">
+    <value>没有待应用的更改。</value>
+  </data>
+  <data name="Previous" xml:space="preserve">
+    <value>编辑器基准值</value>
+  </data>
+  <data name="Review the requested settings. CPU reports are last known observations, not live measurements. Cancel sends no commands." xml:space="preserve">
+    <value>请检查请求的设置。CPU 报告为最近已知的观测值，并非实时测量。取消不会发送任何命令。</value>
+  </data>
+  <data name="Saved" xml:space="preserve">
+    <value>已保存值</value>
+  </data>
+  <data name="Saved value" xml:space="preserve">
+    <value>已保存值</value>
+  </data>
+  <data name="Send request" xml:space="preserve">
+    <value>发送请求</value>
+  </data>
+  <data name="Session value; unverified" xml:space="preserve">
+    <value>本次会话值；未经验证</value>
+  </data>
+  <data name="Source" xml:space="preserve">
+    <value>来源</value>
+  </data>
+  <data name="Unavailable" xml:space="preserve">
+    <value>不可用</value>
+  </data>
+  <data name="Unknown" xml:space="preserve">
+    <value>未知</value>
+  </data>
 </root>

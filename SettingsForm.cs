@@ -79,6 +79,7 @@ namespace ZenStatesDebugTool
 
                 InitForm();
                 InitApplyResultsUi();
+                InitTuningEdits();
                 ShowLastStartupApplyResult();
             }
             catch (Exception ex)
@@ -133,14 +134,27 @@ namespace ZenStatesDebugTool
             finally { hardwareOperation = false; if (!shuttingDown && !IsDisposed) tabControl1.Enabled = wasEnabled; }
         }
 
-        private async Task ApplyTuningAsync(Profile profile)
+        private Task ApplyTuningAsync(Profile profile) => ApplyTuningAsync(profile, "Apply selected settings");
+        private async Task ApplyTuningAsync(Profile profile, string scope)
         {
             if (!_hardwareReady || shuttingDown) { SetStatusText("Hardware is still loading or closing."); return; }
+            if (hardwareOperation || (backgroundWorker1?.IsBusy ?? false)) { SetStatusText("Another hardware operation is running."); return; }
             try
             {
+                profile = TuningSnapshots.Profile(profile);
+                if (TuningService.RequestsFromProfile(profile).Count == 0) { SetStatusText(UiText.T("No pending changes to apply.")); return; }
+                string validation = TuningService.ValidateProfileInput(profile) ?? hardware.Topology.Validate(profile);
+                if (validation != null) { HandleError(validation); return; }
+                using (var preview = new TuningPreviewForm(profile, editControls.Session, scope))
+                {
+                    if (preview.ShowDialog(this) != DialogResult.OK) { SetStatusText(UiText.T("Apply cancelled; no commands sent.")); return; }
+                    profile = preview.ApprovedProfile;
+                }
                 SetStatusText("Applying settings...");
                 var result = await RunHardwareAsync(() => profileApplier.Apply(profile, cpu, Hardware.ClosingToken));
                 if (shuttingDown || IsDisposed) return;
+                result.Label = UiText.T(scope) + (string.IsNullOrEmpty(profile.Name) ? "" : " — " + profile.Name);
+                editControls.RecordResult(result);
                 applyResultsPanel.ShowResult(result);
                 SetStatusText(TuningResultFormatter.FriendlySummary(result));
                 PrependResult(TuningResultFormatter.Report(result) + Environment.NewLine);
@@ -311,6 +325,8 @@ namespace ZenStatesDebugTool
                     var preferences = manager.Load(); preferences.Language = language.Item2;
                     try { manager.Save(preferences); } catch (Exception ex) { SetStatusText(ex.Message); }
                     foreach (Form form in Application.OpenForms) UiText.Apply(form);
+                    editControls?.Refresh();
+                    applyResultsPanel?.RefreshLanguage();
                 });
             menuStrip.Items.Add(languageMenu);
 
@@ -394,16 +410,18 @@ namespace ZenStatesDebugTool
                             ApplyCoMargins(coMargins);
                             if (_fmaxSupported)
                                 ApplyFMax(fmax);
-                            ApplyCurveShaperValues(CurveShaperCodec.ResolveDisplay(csValues, _lastAppliedCurveShaper));
+                            ApplyCurveShaperValues(CurveShaperCodec.ResolveDisplay(csValues, _lastAppliedCurveShaper), false, !CurveShaperCodec.IsAllZero(csValues));
                             ApplyBclk(bclk);
                             ApplyProchot(prochot);
                             ApplyWmiCommands(wmiItems);
                             _hardwareReady = true;
+                            editControls?.Refresh();
                             SetStatusText(hardware.Topology.Error == null ? $"{cpu.info.codeName}. Ready." : $"Ready. Per-core controls unavailable: {hardware.Topology.Error}");
                         }
                         catch (Exception ex)
                         {
                             _hardwareReady = true; // unblock the gated controls regardless
+                            editControls?.Refresh();
                             SetStatusText($"Hardware load applied with errors: {ex.Message}");
                         }
                     });
@@ -431,6 +449,10 @@ namespace ZenStatesDebugTool
 
         private void ApplyFMax(uint fmax)
         {
+            if (editControls != null) {
+                if (fmax != 0) editControls.Observe(new TuningRequest { Kind = TuningKind.Fmax, Value = fmax }, "CPU report; unverified");
+                return;
+            }
             numericUpDownFmax.Value =
                 Math.Max(numericUpDownFmax.Minimum, Math.Min(numericUpDownFmax.Maximum, fmax));
         }
@@ -442,6 +464,7 @@ namespace ZenStatesDebugTool
         private void SetFmaxFromReadback(uint hwFmax)
         {
             if (hwFmax == 0) return;
+            if (editControls != null) { editControls.Observe(new TuningRequest { Kind = TuningKind.Fmax, Value = hwFmax }, "CPU report; unverified"); return; }
             numericUpDownFmax.Value =
                 Math.Max(numericUpDownFmax.Minimum, Math.Min(numericUpDownFmax.Maximum, hwFmax));
         }
@@ -538,7 +561,7 @@ namespace ZenStatesDebugTool
         // Apply-only half (UI thread); the read is done by the caller so the startup path
         // can gather it on a background thread. Each tier word packs low/med/high in bits
         // 8/16/24.
-        private void ApplyCurveShaperValues(uint[] csValues, bool showStatus = false)
+        private void ApplyCurveShaperValues(uint[] csValues, bool showStatus = false, bool cpuReported = false)
         {
             if (csValues == null || csValues.Length < 5)
                 return;
@@ -546,6 +569,12 @@ namespace ZenStatesDebugTool
             for (int tier = 0; tier < 5; tier++)
             {
                 CurveShaperCodec.Unpack(csValues[tier], out int low, out int med, out int high);
+                if (editControls != null) {
+                    if (cpuReported || !CurveShaperCodec.IsAllZero(csValues))
+                        editControls.Observe(new TuningRequest { Kind = TuningKind.CurveShaper, Index = tier, Value = low, Medium = med, High = high },
+                            cpuReported ? "CPU report; unverified" : "Session value; unverified", cpuReported);
+                    continue;
+                }
                 CsGrid[tier][0].Value = low;
                 CsGrid[tier][1].Value = med;
                 CsGrid[tier][2].Value = high;
@@ -592,7 +621,10 @@ namespace ZenStatesDebugTool
                     continue;
                 control.Enabled = true;
                 if (margins.TryGetValue(i, out int value))
-                    control.Value = Math.Max(control.Minimum, Math.Min(control.Maximum, value));
+                {
+                    if (editControls != null) editControls.Observe(new TuningRequest { Kind = TuningKind.CurveOptimizer, Index = i, Value = value }, "CPU readback");
+                    else control.Value = Math.Max(control.Minimum, Math.Min(control.Maximum, value));
+                }
             }
         }
 
@@ -694,7 +726,11 @@ namespace ZenStatesDebugTool
             };
             buttonRow.Controls.Add(MakeBarButton("Save", ButtonSaveProfile_Click));
             buttonRow.Controls.Add(MakeBarButton("Load", ButtonLoadProfile_Click));
+            applyChangesButton = MakeBarButton("Apply changes", ApplyChanges_Click);
+            discardEditsButton = MakeBarButton("Discard edits", DiscardEdits_Click);
+            buttonRow.Controls.Add(applyChangesButton);
             buttonRow.Controls.Add(MakeBarButton("Apply all settings", ButtonApplyProfile_Click));
+            buttonRow.Controls.Add(discardEditsButton);
             buttonRow.Controls.Add(MakeBarButton("Delete", ButtonDeleteProfile_Click));
 
             numericUpDownPpt = MakeLimitBox(0, 1000);
@@ -706,6 +742,8 @@ namespace ZenStatesDebugTool
             grid.Controls.Add(MakeFieldLabel("Profile"), 0, r);
             grid.Controls.Add(comboBoxProfiles, 1, r); r++;
             grid.Controls.Add(buttonRow, 0, r); grid.SetColumnSpan(buttonRow, 2); r++;
+            pendingEditsLabel = MakeFieldLabel("0 pending settings. Yellow fields are local edits.");
+            grid.Controls.Add(pendingEditsLabel, 0, r); grid.SetColumnSpan(pendingEditsLabel, 2); r++;
             grid.Controls.Add(MakeFieldLabel("PPT (W)"), 0, r);
             grid.Controls.Add(new PowerLimitEditor(TuningKind.Ppt, numericUpDownPpt, ApplyTuningAsync), 1, r); r++;
             grid.Controls.Add(MakeFieldLabel("TDC (A)"), 0, r);
@@ -882,7 +920,8 @@ namespace ZenStatesDebugTool
                     }
                 }
                 ApplyProfileToUi(profile);
-                SetStatusText($"Profile '{name}' loaded into the form. Use Apply all settings to send it to the CPU.");
+                editControls?.RememberSaved(profile);
+                SetStatusText($"Profile '{name}' loaded as local edits. Review with Apply changes or Apply all settings.");
             }
             catch (Exception ex)
             {
@@ -899,7 +938,7 @@ namespace ZenStatesDebugTool
 
         private async void ButtonApplyProfile_Click(object sender, EventArgs e)
         {
-            await ApplyTuningAsync(GatherProfileFromUi(CurrentProfileName));
+            await ApplyTuningAsync(GatherProfileFromUi(CurrentProfileName), "Apply all settings");
         }
 
         private void ButtonSaveProfile_Click(object sender, EventArgs e)
@@ -909,7 +948,9 @@ namespace ZenStatesDebugTool
             if (!ProfileManager.IsValidName(name)) { HandleError("Invalid profile name (avoid \\ / : * ? \" < > |)."); return; }
             try
             {
-                profileManager.Save(GatherProfileFromUi(name));
+                var snapshot = GatherProfileFromUi(name);
+                profileManager.Save(snapshot);
+                editControls?.RememberSaved(snapshot);
                 RefreshProfileList(name);
                 SetStatusText($"Profile '{name}' saved.");
             }
@@ -2843,6 +2884,10 @@ namespace ZenStatesDebugTool
 
         private Profile GatherProfileFromUi(string name)
         {
+            if (editControls != null) {
+                var snapshot = editControls.Capture(); snapshot.Name = name;
+                hardware.Topology.Bind(snapshot); return snapshot;
+            }
             var profile = new Profile { Name = name };
 
             if ((cpu.smu.Rsmu.SMU_MSG_SetDldoPsmMargin != 0 || cpu.smu.Mp1Smu.SMU_MSG_SetDldoPsmMargin != 0))
@@ -3319,7 +3364,7 @@ namespace ZenStatesDebugTool
             try
             {
                 var values = await RunHardwareAsync(() => Hardware.Locked(() => cpu.GetAllCurveShaperMargins()));
-                if (!shuttingDown) { ApplyCurveShaperValues(CurveShaperCodec.ResolveDisplay(values, _lastAppliedCurveShaper)); SetStatusText("Curve Shaper read complete; session fallback used if hardware reports no values."); }
+                if (!shuttingDown) { ApplyCurveShaperValues(CurveShaperCodec.ResolveDisplay(values, _lastAppliedCurveShaper), false, !CurveShaperCodec.IsAllZero(values)); SetStatusText("Curve Shaper read complete; session fallback used if hardware reports no values."); }
             }
             catch (Exception ex) { if (!shuttingDown) SetStatusText(ex.Message); }
         }
