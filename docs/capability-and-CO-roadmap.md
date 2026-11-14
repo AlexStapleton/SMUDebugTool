@@ -2,7 +2,9 @@
 
 Prepared 14 November 2026. Baseline: released v1.50.1, source `4d8d5d39cc5007fbd0106ac729bfc2e37f23e62d`; bundled ZenStates-Core `3bb1dad5b6cccc14f063d6eacbcf891a309944f3`.
 
-This is an implementation plan, not an implementation or a hardware test. No tuning commands, benchmark processes, driver maintenance, startup-task changes, or profile changes were performed to prepare it. Scope covers the capabilities identified in our source/interface audit, plus a workbench for the user's HWiNFO64 and Cinebench 2024 workflow. It does not claim access to all private Ryzen Master driver functions.
+This began as an implementation plan; the tracker below records delivered code separately from hardware testing. No live tuning commands, benchmark processes, driver maintenance, startup-task changes, or profile changes were performed to prepare or implement it. Scope covers the capabilities identified in our source/interface audit and a native workbench for the user's Cinebench 2024 workflow. It does not claim access to all private Ryzen Master driver functions.
+
+**User direction, 14 November:** capture per-core VID through this program's existing driver access and use those measurements for assisted CO trials. No HWiNFO CSV imports or HWiNFO runtime dependency. This replaces the original external-import proposal throughout this roadmap.
 
 ## Living implementation tracker
 
@@ -15,13 +17,13 @@ Updated 14 November 2026. This document is now both the design and the change tr
 | C03 Scalar verification | Implemented; firmware validation pending | Fresh float-decoded direct getter in shared apply path; invalid/missing replies cannot confirm. |
 | C04 Thermal ceiling | Implemented; firmware validation pending | Separate guarded one-packet desktop RSMU action; accepted only, not falsely verified; no profile/startup changes. |
 | C05 Limit diagnostics | Partial implementation | Individual fused command statuses/raw words and configured snapshots. Fused scaling and active-limit verification remain open. |
-| C06 CPU/CCD/rail telemetry | Partial implementation | Manual snapshots of CPU/CCD temperatures and mapped SVI3 fields; no capture stream or graphs yet. |
+| C06 CPU/CCD/rail telemetry | Partial implementation | Manual CPU/CCD/SVI3 snapshots plus bounded native per-core VID/reported/effective-clock capture. Continuous package/thermal capture and graphs remain planned. |
 | C07 Memory overview | Planned | Existing PMTable labels retained; consolidated view not started. |
 | C08 Channel timings | Planned | No new implementation. |
 | C09 DIMM/SPD/EXPO | Planned | No new implementation. |
 | C10 Guided firmware editor | Planned | Existing v1.50 metadata guidance retained; grouped editing not started. |
-| C11 Session recording | Next main milestone | Baseline/candidate records and Cinebench 2024 markers, then CSV import. |
-| C12 Assisted CO | Planned after C11 | Core VIDs confirmed as user's source; mapping/native feasibility still open. |
+| C11 Session recording | Partial implementation; hardware validation pending | Native baseline/candidate markers, manual scores, per-core summaries, mixed-context checks and JSON report export. No import. Repeated-run analysis and richer telemetry remain planned. |
+| C12 Assisted CO | One-step assistance implemented; hardware validation pending | Validated APIC/physical bindings, native VID/APERF windows, one explicit bounded negative step, fresh CO precondition and readback. Automated search remains deferred. |
 | C13 Validation/recovery | Planned before automatic search | No experiment journal, WHEA integration or automatic search is active. |
 | C14 Manual-OC reporting | Planned | Existing dedicated controls retained. |
 | C15 GPU CO | Conditional/planned | Firmware acceptance untested. |
@@ -39,6 +41,16 @@ Updated 14 November 2026. This document is now both the design and the change tr
 - Hardware validation remains pending. No live Cpu instance, tuning write, benchmark, driver maintenance or startup task was invoked during implementation/testing.
 
 Validation record: Release build passed with zero warnings/errors; **414 app tests** (32 new cases) and **9 upstream-bot tests** passed; package success/failure checks passed. Synthetic overview renders inspected at normal and doubled font sizes; corrected clipped headers/value cells. This does not establish live firmware behavior or mixed-monitor DPI correctness. PR: [#22 — first CPU-overview milestone](https://github.com/AlexStapleton/SMUDebugTool/pull/22). Release publication: not started.
+
+### Change log — 14 November 2026, native CO workbench
+
+- Added **Tools → Native CO workbench** using the existing current-processor MSR backend. Reviewed desktop gates: Raphael family 19h/model 61h and Granite Ridge family 1Ah/model 44h. Physical/APIC/SMT identity must agree before capture; list positions are never CO targets.
+- Implemented read-only per-core status VID and reported clock plus counter-based APERF effective clock. Missing/reset/failed/stale intervals remain unavailable. Native read evidence includes APIC/Windows identity and raw status for hardware acceptance checks.
+- Added a persistent cancellable worker, skipped busy hardware windows, a five-second/16,000-reading ring, 200 ms UI rendering and requested/achieved cadence reporting. Twenty milliseconds is a request, not a measured performance promise.
+- Added baseline/candidate markers, manual benchmark score, bounded online summaries, wrapped run table, JSON report export and explicit new-session action. Endpoint CO reads and editor requests are separate evidence; app write attempts mark a recording mixed. No CSV/import/live HWiNFO path remains.
+- Added one-action assisted trials: at least 20 valid busy samples over two seconds, similar reported clocks, two comparable peers in the same CCD, a 12.5 mV requested-VID gap, user lower bound, usable scalar evidence and unchanged fresh CO. One action sends at most one CO decrement and verifies it through the existing result path. It does not loop, launch a workload, select startup profiles or declare stability.
+- Added 40 driver-free cases covering native decoding, identity ambiguity, counter intervals, failed reads, affinity restoration, stale/unloaded data, bounded proposals, context comparisons, cancellation and capture/write races. Release build, **454 app tests**, **9 bot tests** and package success/failure checks passed. Synthetic native views were inspected at normal/doubled fonts; live readings and run comparisons use separate tabs to retain readable rows. PR [#22](https://github.com/AlexStapleton/SMUDebugTool/pull/22) carries the combined milestones and CI status; release publication has not started.
+- No live CPU access was used during development. Exact firmware VID behavior, physical binding on the user's machine, capture overhead and useful tuning outcomes remain hardware acceptance gates. See [native workbench contract](native-co-workbench.md).
 
 ## Product goal
 
@@ -105,13 +117,13 @@ For multiple firmware edits, validate the whole request before sending; record e
 
 ### Stage 3 — Ship the manual CO workbench first
 
-Build session recording and comparison before automatic search. Support an independently launched Cinebench 2024 run, manual start/end markers, score entry and HWiNFO CSV import first. Add optional live HWiNFO shared-memory reading after format, identity mapping, freshness and licensing constraints are reviewed. Native telemetry remains usable without HWiNFO where supported.
+Build native session recording and comparison before automatic search. Support an independently launched Cinebench 2024 run, manual start/end markers and score entry. Capture per-core VID and clocks through the existing driver; there is no external CSV or shared-memory dependency. The first implementation supplies these pieces; package/thermal streams and repeated-run statistics follow later.
 
 Expose one per-core table: physical core/CCD, current and candidate CO, readback outcome, active-sample VID if available, effective and reported clock, utilization/residency when available, test coverage and errors. Put measured rail voltage, package power and temperature in separate package/rail panels, not duplicated as alleged per-core physical voltages.
 
 Allow one candidate or one explicitly selected batch to be applied while recording. Mark the transition, wait for a suitable comparable measurement window, and retain the previous run. A finite benchmark scored across a mid-run offset change is a mixed run and cannot serve as the score for either configuration. Collect clean scored runs after the candidate settles.
 
-**Gate:** mapping must be validated before per-core conclusions or writes. Missing per-core VID does not block recording clocks and benchmark results, but disables VID-based guidance. No automatic offset changes in this release. Export/import round-trips preserve units, provenance, settings and missing-data flags.
+**Gate:** mapping must be validated before per-core conclusions or writes. Missing per-core VID disables VID-based guidance. No unattended offset changes in this release. Exported reports preserve units, context and missing-data evidence and cannot be imported to apply or resume tuning.
 
 ### Stage 4 — Add assistance, then optional bounded search
 
@@ -141,7 +153,7 @@ Keep additional WMI methods and HSMP development in a separate investigation led
 
 ## 3. The user's voltage-balancing workflow
 
-The user confirmed the sensor is **Core VIDs**. The current workflow is HWiNFO64 at a requested 20 ms polling interval, Cinebench 2024 CPU load, then negative per-core CO adjustments until the displayed Core VIDs converge. Preserve Core VIDs as the initial user-selected sensor family; do not silently substitute Core VID (Effective), a package VID, or measured rail voltage. Exact external sensor IDs, physical-core mapping, unit conversion and update timestamps still require validation.
+The user originally watched **Core VIDs** in HWiNFO64 at a requested 20 ms interval while running Cinebench 2024. The requested product now replaces that capture with native per-core reads and uses them for assisted negative CO trials. Do not substitute a package VID or measured rail voltage. The native encoding and identity contract are documented in `native-co-workbench.md`; comparison on the actual machine remains pending.
 
 HWiNFO's separately named **CPU Core VID (Effective)**, where available, denotes the final requested core-rail VID; it is not a time-averaged per-core VID alternative and cannot replace the individual Core VIDs in a core comparison. Its absence does not block this workflow. Do not reconstruct it as the maximum or average of separately sampled core rows: source methods and sample times can differ. Keep **Core Effective Clocks** as a distinct frequency metric.
 
@@ -151,7 +163,7 @@ HWiNFO's separately named **CPU Core VID (Effective)**, where available, denotes
 
 Retain a **VID spread** visualization as an optional diagnostic, not the success criterion. Show median, distribution, valid sample count and comparable activity/clock/temperature windows. Exclude sleeping, parked, stale or insufficiently loaded samples; do not replace them with zero. Use population summaries over a window rather than equality of individual 20 ms samples. Unknown sensor semantics disable matching-based suggestions.
 
-For the 9950X3D, group by validated physical CCD and measured capability. Detect/cache-label differing CCD roles when supported; do not assume equal targets or a fixed cache CCD number. Start comparisons within a CCD and within similar operating windows, then evaluate the overall workload. Native per-core VID is a feasibility gate: the bundled `HwPstateStatus.CurCpuVid` is a legacy-width field, and its logical-index calculation is not our validated physical-core mapping. Do not reuse it blindly for Zen 5 per-core guidance.
+For the 9950X3D, group by validated physical CCD and measured capability. Detect/cache-label differing CCD roles when supported; do not assume equal targets or a fixed cache CCD number. Start comparisons within a CCD and within similar operating windows, then evaluate the overall workload. The new reader uses physical APIC/SMT identities instead of the bundled getter's list-index calculation. It keeps the status register's eight-bit VID request encoding separate from SVI3 rail and split nine-bit P-state-definition encodings; independent implementations support that interpretation, but real firmware agreement remains to be tested.
 
 Offer three user objectives:
 
@@ -165,11 +177,11 @@ VID balancing can help generate a candidate in any mode; it cannot override a re
 
 ### Recommended user journey
 
-1. Open the workbench, inspect source availability and verify core mapping. For this user's workflow, select HWiNFO Core VIDs and confirm their individual physical-core bindings; preserve each sensor's name, ID, unit and scope in the session. Other sensor families remain explicitly selectable alternatives, not automatic substitutions.
+1. Open **Tools → Native CO workbench**, start monitoring and inspect native read evidence. The program validates physical/APIC/SMT identities and binds reads to those processors. Unsupported or ambiguous layouts stop capture rather than guessing a mapping. No external sensor selection or import is needed.
 2. Choose the goal and capture the current CO/CS/FMax/PBO context. Record BIOS/SMU version, power plan, workload version/settings, affinity and cooling context. An unreadable value is recorded as unknown, not silently assumed stock.
 3. Record an unchanged baseline. Warm up consistently, exclude startup/settling intervals, and repeat clean scored runs to estimate ordinary variation. Retain a separate idle/light-load segment.
-4. Display per-core/CCD summaries. Identify a candidate using comparable active samples. The user can edit manually or accept a later recommendation; the program does not call a high-VID core defective.
-5. Apply the candidate once through existing CO verification. Keep other tuning dimensions fixed. Record exact timestamps, affected cores and any intermediate/failed write. A confirmed setting still has validation pending.
+4. Inspect per-core/CCD summaries and let the workload settle. For assistance, set a personal CO lower bound and choose **Trial next eligible core (-1 CO)**. Only fresh, sufficiently busy, steady-clock windows with comparable same-CCD peers qualify. A higher-VID core is not defective.
+5. The action re-reads current CO, applies one negative step and verifies it through the existing result path. Keep other tuning dimensions fixed. A write during a scored recording marks that recording mixed; end it and collect a clean candidate run. A confirmed setting still has validation pending.
 6. Record a separate candidate run. Compare score, effective clocks, requested VID, measured rail voltage, package energy/power, temperatures and test results. Mark throttling, source gaps or a changing thermal context.
 7. Validate beyond the all-core render: selected core single-thread tests, SMT-sibling/paired tests, heavier and lighter workloads, transitions, idle and the user's real applications. Where practical, use computational correctness tests with explicit pass/fail output. A Cinebench completion is performance evidence for that workload, not comprehensive error checking.
 8. Keep, discard or continue. Save a named experimental result with its test coverage. Only explicitly promote a chosen validated profile to startup. Interrupted/failed experiments cannot become the startup candidate automatically.
@@ -186,12 +198,11 @@ Proposed starting policies, to be measured rather than advertised as achieved:
 
 | Work | Initial policy |
 | --- | --- |
-| Selected fast native CPU metrics | 100 ms default; optional requested 20 ms mode only after reader and overhead validation |
-| HWiNFO shared-memory consumption | Follow provider updates; report provider age and actual update cadence, including 20 ms when available |
+| Native VID/reported/effective-clock metrics | Implemented: 100 ms default; optional requested 20 ms, achieved cadence shown; hardware overhead pending |
 | PM-table/thermal metrics | Source-specific measured rate; initially 250-1000 ms, with freshness shown |
 | Slow SPD/SMBus/board reads | On demand or 1-2 s when validated; never blanket 20 ms polling |
 | UI table/chart refresh | Approximately 5 Hz; acquisition remains independent |
-| History | Bounded in-memory window, e.g. 120 s plus a 64 MiB cap; optional streamed recording with a storage quota |
+| History | Implemented: 5 s/16,000 readings; online summaries for at most 100 runs; report capped at 8 MiB. Longer streamed capture remains future work. |
 
 Use a persistent worker and monotonic clock, not a new task for every sensor tick. Skip missed deadlines and busy hardware windows; never queue a catch-up burst. Hardware transactions remain serialized through the existing lifetime/lock contract. Tuning writes take precedence over optional monitoring; scans and dumps are paused during a controlled experiment. Cancellation is checked between operations; no disposal until active I/O finishes.
 
@@ -203,9 +214,9 @@ Benchmark capture overhead with capture off, normal capture and fast capture und
 
 ### External applications
 
-Support manual workload launch and CSV import first; these do not require taking over an existing process. Later adapters can launch a user-selected local executable, capture exit/output and manage only the child they own. Never terminate unrelated benchmark instances. Store workload version and recipe; scores from different Cinebench releases are not directly comparable. Verify Cinebench 2024 automation against that release rather than assuming current Cinebench 2026 flags apply unchanged.
+Support manual workload launch with native recording first. Later adapters can launch a user-selected local executable, capture exit/output and manage only the child they own. Never terminate unrelated benchmark instances. Store workload version and recipe; scores from different Cinebench releases are not directly comparable. Verify Cinebench 2024 automation against that release rather than assuming current Cinebench 2026 flags apply unchanged.
 
-Optional HWiNFO live integration reads a user-run installation; do not bundle HWiNFO or claim an SDK license. Respect its shared-memory availability and limits. If the provider stops, marks data stale or disables sharing, show disconnected and suspend dependent recommendations/search. Never manufacture samples or automatically restart it to circumvent a limit. Map stable sensor identity and topology, not display-row position alone. A CSV import with uncertain core mapping can support package analysis but not per-core writes.
+HWiNFO is not an implementation dependency or a planned import requirement. A user may independently compare its display during hardware acceptance, but native capture and assisted writes must function without it. If the native source becomes unavailable, suspend dependent assistance and show the reason; never substitute cached values as new samples.
 
 ### Errors, recovery and startup
 
@@ -220,7 +231,7 @@ Recovery records are machine/topology-bound and written atomically; corrupt/miss
 Suggested new components:
 
 - `CapabilityService`: platform metadata and checked capability evidence.
-- `TelemetryCoordinator` / provider adapters: native, HWiNFO live and CSV; immutable source-tagged snapshots.
+- Native provider/coordinator: implemented `NativeVidReader` and `NativeVidMonitor`; immutable source-tagged readings. Extend to package/thermal streams later.
 - `CoreIdentityMap`: physical SMU core, Windows group/logical processor, SMT siblings and external sensor identities, with validation status.
 - `ExperimentSession` / journal: baseline, configuration generations, trials, segments and recovery interlock.
 - `WorkloadAdapter`: manual markers first; versioned child-process adapters later.
@@ -232,12 +243,12 @@ Reuse `TuningService`, validated topology, detached results, `HardwareOperationR
 
 Automated verification uses fake transports/providers/workloads; it must not construct a live CPU or write real settings. Cover signed offsets, sparse/disabled cores, reordered sensor rows, processor groups, SMT, mixed CCD roles, source skew, duplicates, stale/missing values, counter resets, slow I/O, cancellation, partial writes/restores, external edits, event attribution, experiment crashes and startup interlock. Test statistical comparison against known synthetic noise, not merely the implementation's chosen formula. Include long-running bounded-memory and UI responsiveness checks.
 
-Hardware acceptance is staged: read-only captures and mapping checks first; then user-initiated known CO changes; then manual baseline/candidate comparison; then validation adapters; finally optional bounded search. Compare native and HWiNFO sources at equivalent windows while preserving their different meanings. Verify actual driver serialization and scheduling overhead before enabling fast native capture. No claimed success on one BIOS establishes support for every Zen 5/X3D system.
+Hardware acceptance is staged: read-only captures and mapping checks first; then user-initiated known CO changes; then manual baseline/candidate comparison; then validation adapters; finally optional bounded search. Independently displayed monitoring tools can help cross-check equivalent windows, preserving source differences. Measure actual driver serialization and scheduling overhead before relying on fast capture. No claimed success on one BIOS establishes support for every Zen 5/X3D system.
 
 ## 6. Recommended delivery decisions
 
 1. Build Stage 0 and Stage 1 as the first release: capability report, scalar verification, thermal ceiling and a compact read-only overview. This gives useful improvements before the larger workbench.
-2. Prioritize Stage 3 next for this user: a manual session recorder with Cinebench 2024 markers, CSV import and per-core/CCD comparisons. Native per-core VID feasibility runs in parallel as an engineering investigation, not as a prerequisite for all session recording.
+2. Deliver the native Stage 3 recorder and explicit one-step Stage 4 assistance for this user. This is implemented in PR #22; finish hardware acceptance before expanding into automatic search. Native per-core capture is the product path, with no CSV requirement.
 3. Ship memory reads/editor work as an independent track so it does not block CO work. It targets a different user task and has different activation semantics.
 4. Add assisted proposals and broader validation after recorded comparisons are trustworthy. Automatic search is the last CO milestone, not the first demo.
 5. Add manual-OC/GPU refinements and mobile/APU support independently, with their own hardware acceptance evidence. Keep live VDDG/DRAM voltage setters and unknown HSMP/WMI formats in research until proven.
@@ -248,7 +259,7 @@ Reviewed against all ten desktop gaps in the capability audit plus mobile/APU ex
 
 The design keeps distinct: requested VID versus measured rail voltage; physical core versus Windows logical index; register confirmation versus test outcome; fused/setup limits versus active limits; timer cadence versus source update rate; Cinebench score versus computational correctness; a passed workload versus universal stability. Sampling and startup recovery are dependencies of automation rather than optional cleanup work.
 
-Resolved user preference: the HWiNFO sensor family is Core VIDs. Unresolved implementation gates: exact external sensor IDs and units; reliable native Zen 5 per-core VID source; validated physical-to-OS-to-sensor mapping; effective-clock counter contract; available PM-table layout and active-limit reads on the user's BIOS; Cinebench 2024 automation behavior; external workload result formats; live integration terms/format; actual 20 ms overhead. None prevents capability reporting, scalar work, read-only memory views or the manual/CSV session prototype.
+Resolved user preference: native per-core VID capture and tuning assistance; no CSV import. Implemented source contracts: restricted desktop status-VID decoder, CPUID/APIC/SMT bindings and APERF elapsed-counter effective clocks. Remaining gates: real-machine source/mapping agreement and overhead; PM-table layout and active-limit reads on the user's BIOS; repeated-run comparison; Cinebench 2024 automation behavior; workload/error formats and recovery interlock. Memory views and other independent roadmap areas can proceed without those future automation gates.
 
 ## Primary sources and local evidence
 
@@ -260,7 +271,7 @@ Resolved user preference: the HWiNFO sensor family is Core VIDs. Unresolved impl
 - [HWiNFO author on VID versus supplied voltage](https://www.hwinfo.com/forum/threads/can-i-view-actual-cpu-core-voltages-not-vids.8586/): supports the measurement distinction, not a model-specific complete rail topology for every Ryzen CPU.
 - [HWiNFO author on final effective VID](https://www.hwinfo.com/forum/threads/hwinfo-v6-40-released.6894/) and [different VID sampling methods](https://www.hwinfo.com/forum/threads/cpu-core-vid-effective-vs-core-vids.7749/): the final request is distinct from individual core readings and supplied voltage.
 - [HWiNFO author on effective clocks](https://www.hwinfo.com/forum/threads/effective-clock-vs-instant-discrete-clock.5958/): effective clock includes behavior across the measurement interval, including sleep.
-- [HWiNFO shared-memory availability](https://www.hwinfo.com/licenses/) and [SDK information](https://www.hwinfo.com/sdk/): verify applicable integration terms during implementation.
+- [Native workbench source contract](native-co-workbench.md): pinned independent references for status-VID, frequency and APERF interpretation. No HWiNFO API or SDK is used.
 - [Maxon Cinebench technical information](https://www.maxon.net/en/tech-info-cinebench): workload/environment repeatability and version-specific automation. The currently published page documents Cinebench 2026; the user uses 2024, which needs its own adapter validation.
 - [AMD-authored WMI interface proposal](https://lore-kernel.gnuweeb.org/platform-driver-x86/20261010190543.563161-4-Shyam-sundar.S-k@amd.com/): firmware metadata, extra methods and setup-versus-active limitations. This is a proposed Linux driver/interface document, not proof of uniform Windows BIOS behavior.
 - App baseline inspected locally: `Utils/ZenStatesTuningTransport.cs`, `Utils/TuningService.cs`, `Utils/TopologySnapshot.cs`, `Utils/Hardware.cs`, `Utils/HardwareLifetime.cs`, `Utils/HardwareOperationRunner.cs`, `Utils/SmuDecodeAdapter.cs`, `Utils/AcpiCommandHelp.cs`, `Profiles/Profile.cs`, `Program.cs`, `Utils/StartupTaskService.cs` and monitor forms.

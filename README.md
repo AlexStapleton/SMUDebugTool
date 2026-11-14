@@ -4,8 +4,11 @@ ZenStatesDebugTool
 
 The [capability and Curve Optimizer roadmap](docs/capability-and-CO-roadmap.md)
 is the living tracker for implemented changes, validation and remaining hardware gates.
-The first implementation adds **Tools → CPU overview and capabilities**, on-demand
-readings, scalar verification and a separate temperature-ceiling action. See the
+The implementation adds **Tools → CPU overview and capabilities**, on-demand
+readings, scalar verification and a separate temperature-ceiling action. **Tools →
+Native CO workbench** captures per-core VID and clocks through the existing driver,
+records baseline/candidate runs and offers explicit, verified one-step CO trials.
+There is no HWiNFO or CSV dependency. See the [workbench guide](docs/native-co-workbench.md) and
 [v1.51.0 notes](docs/release-notes-1.51.0.md) for its scope and limitations.
 
 ### Build and package this fork

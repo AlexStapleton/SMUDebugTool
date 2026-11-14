@@ -1,4 +1,4 @@
-# v1.51.0 — first roadmap milestone
+# v1.51.0 — CPU overview and native CO workbench
 
 - Add **Tools → CPU overview and capabilities**, a resizable read-only snapshot with wrapped cells and a copyable evidence report. Opening or refreshing sends no tuning writes and starts no polling timer.
 - Report CPU, board/BIOS, SMU, topology and dependency identity; distinguish RSMU/MP1 command definitions from proven firmware support.
@@ -6,6 +6,10 @@
 - Verify scalar writes through the shared GUI/headless apply path. Decode its floating-point getter, reject invalid data, and report mismatches without replacing requested values.
 - Add a separate, one-click temperature-ceiling action for reviewed Raphael/Granite Ridge command maps. The 40–95 °C interval is a software guard, not a BIOS-reported range. Each request uses one RSMU command without fallback or retry. Firmware can reject it; an accepted request remains unverified because no active-ceiling getter is established. This action does not disable thermal protections or enter OC mode, and is not added to profiles/startup.
 - Show each available fused-limit command's own status and raw word separately. Keep fused values explicitly in raw firmware units; configured power/temperature snapshots are not active PPT or runtime-ceiling verification. Decoding is restricted to the reviewed desktop contract.
-- Track all roadmap areas in `docs/capability-and-CO-roadmap.md`, with delivered work separated from pending firmware validation and future CO recording/assistance.
+- Add **Tools → Native CO workbench**: per-core VID requests, reported clock and APERF effective clock from the existing driver; no HWiNFO/CSV dependency. Restricted to reviewed Raphael/Granite Ridge desktop identities with complete physical/APIC/SMT mapping.
+- Record manual baseline/candidate runs and benchmark scores, per-core native summaries, CO endpoints and editor context. Write attempts during a run mark it mixed. Use a wrapped run table and export-only JSON reports; sessions do not change startup profiles.
+- Offer **Trial next eligible core (-1 CO)**: one explicit click chooses a fresh, steady, busy core with comparable same-CCD peers, respects a user lower bound, checks scalar/current CO and verifies one decrement. No automatic loop or workload launch; VID convergence is not a performance/stability verdict.
+- Keep capture off the UI thread, skip busy hardware windows and missed deadlines, bound memory and display requested versus achieved cadence. Default 100 ms; optional requested 20 ms needs actual-machine overhead testing. UI renders at 200 ms.
+- Track all roadmap areas in `docs/capability-and-CO-roadmap.md`, separating delivered work, hardware validation and future automation/recovery.
 
-Validation uses fake transports and synthetic, driver-free UI fixtures. No automated test constructs a live Cpu, tunes hardware, or removes a driver. Real firmware acceptance, telemetry agreement and actual DPI behavior still need user testing. This milestone contains no CO auto-tuning or HWiNFO integration.
+Validation uses fake transports and synthetic, driver-free UI fixtures. No automated test constructs a live Cpu, tunes hardware, or removes a driver. Real firmware acceptance, VID/mapping agreement, sampling overhead and actual DPI behavior still need user testing. Automatic search, WHEA integration, crash recovery and automatic benchmark scoring remain future milestones. See `docs/native-co-workbench.md` for the source contract and acceptance sequence.

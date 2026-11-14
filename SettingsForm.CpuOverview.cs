@@ -22,9 +22,10 @@ namespace ZenStatesDebugTool
         private async Task<TuningResult> ApplyTemperatureCeilingAsync(int value)
         {
             RequireOverviewReady();
-            var result = await RunHardwareAsync(() => Hardware.Locked(() => new TuningService(new ZenStatesTuningTransport(cpu)).Apply(
+            var result = await RunHardwareWriteAsync(() => Hardware.Locked(() => new TuningService(new ZenStatesTuningTransport(cpu)).Apply(
                 new[] { new TuningRequest { Kind = TuningKind.Temperature, Value = value } }, Hardware.ClosingToken)));
             result.Label = "Apply temperature ceiling";
+            nativeWorkbench?.NoteChange(result);
             if (!shuttingDown && !IsDisposed) {
                 applyResultsPanel.ShowResult(result); SetStatusText(TuningResultFormatter.FriendlySummary(result));
                 PrependResult(TuningResultFormatter.Report(result) + Environment.NewLine);

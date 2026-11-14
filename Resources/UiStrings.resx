@@ -600,4 +600,26 @@
   <data name="Reading snapshot…" xml:space="preserve"><value>Reading snapshot…</value></data>
   <data name="Applying temperature ceiling…" xml:space="preserve"><value>Applying temperature ceiling…</value></data>
   <data name="Evidence" xml:space="preserve"><value>Evidence</value></data>
+  <data name="AgeMs" xml:space="preserve"><value>Age (ms)</value></data>
+  <data name="Context" xml:space="preserve"><value>Context</value></data>
+  <data name="EffectiveMHz" xml:space="preserve"><value>Effective clock (MHz)</value></data>
+  <data name="End run" xml:space="preserve"><value>End run</value></data>
+  <data name="Native CO workbench" xml:space="preserve"><value>Native CO workbench</value></data>
+  <data name="New session (clear runs)" xml:space="preserve"><value>New session (clear runs)</value></data>
+  <data name="ReportedMHz" xml:space="preserve"><value>Reported clock (MHz)</value></data>
+  <data name="Requested interval (ms)" xml:space="preserve"><value>Requested interval (ms)</value></data>
+  <data name="Role" xml:space="preserve"><value>Role</value></data>
+  <data name="Save session report" xml:space="preserve"><value>Save session report</value></data>
+  <data name="Score" xml:space="preserve"><value>Score</value></data>
+  <data name="Score (0 = unset)" xml:space="preserve"><value>Score (0 = unset)</value></data>
+  <data name="Show native read evidence" xml:space="preserve"><value>Show native read evidence</value></data>
+  <data name="Start baseline" xml:space="preserve"><value>Start baseline</value></data>
+  <data name="Start candidate" xml:space="preserve"><value>Start candidate</value></data>
+  <data name="Start monitoring" xml:space="preserve"><value>Start monitoring</value></data>
+  <data name="State" xml:space="preserve"><value>State</value></data>
+  <data name="Trial next eligible core (-1 CO)" xml:space="preserve"><value>Trial next eligible core (-1 CO)</value></data>
+  <data name="User CO lower bound" xml:space="preserve"><value>User CO lower bound</value></data>
+  <data name="Native readings" xml:space="preserve"><value>Native readings</value></data>
+  <data name="Runs and comparison" xml:space="preserve"><value>Runs and comparison</value></data>
+  <data name="VIDVolts" xml:space="preserve"><value>VID (V)</value></data>
 </root>

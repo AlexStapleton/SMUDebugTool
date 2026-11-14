@@ -32,7 +32,7 @@ namespace ZenStatesDebugTool
             pstateReadId = null; pstateVidWrite.Enabled = btnPstateWrite.Enabled = false;
             try
             {
-                var result = await RunHardwareAsync(() => hardware.WritePStateVid(item.Id, decodeContext.PStateLayout, decodeContext.PStateVidEncoding, vid));
+                var result = await RunHardwareWriteAsync(() => hardware.WritePStateVid(item.Id, decodeContext.PStateLayout, decodeContext.PStateVidEncoding, vid));
                 if (shuttingDown) return;
                 SetStatusText($"P{item.Id} VID: {result.Status}; {result.Completed} processors verified. {result.Error}");
                 PrependResult($"VID requested register: {result.Requested?.ToString("X16") ?? "unavailable"}; readback: {result.Observed?.ToString("X16") ?? "unavailable"}\r\n");

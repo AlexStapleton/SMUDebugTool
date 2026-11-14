@@ -134,6 +134,13 @@ namespace ZenStatesDebugTool
             finally { hardwareOperation = false; if (!shuttingDown && !IsDisposed) tabControl1.Enabled = wasEnabled; }
         }
 
+        private async Task<T> RunHardwareWriteAsync<T>(Func<T> action)
+        {
+            nativeWorkbench?.NoteHardwareWrite();
+            try { return await RunHardwareAsync(action); }
+            finally { nativeWorkbench?.InvalidateCapture(); }
+        }
+
         private Task ApplyTuningAsync(Profile profile) => ApplyTuningAsync(profile, "Apply selected settings");
         private async Task ApplyTuningAsync(Profile profile, string scope)
         {
@@ -146,10 +153,11 @@ namespace ZenStatesDebugTool
                 string validation = TuningService.ValidateProfileInput(profile) ?? hardware.Topology.Validate(profile);
                 if (validation != null) { HandleError(validation); return; }
                 SetStatusText("Applying settings...");
-                var result = await RunHardwareAsync(() => profileApplier.Apply(profile, cpu, Hardware.ClosingToken));
+                var result = await RunHardwareWriteAsync(() => profileApplier.Apply(profile, cpu, Hardware.ClosingToken));
                 if (shuttingDown || IsDisposed) return;
                 result.Label = UiText.T(scope) + (string.IsNullOrEmpty(profile.Name) ? "" : " — " + profile.Name);
                 editControls.RecordResult(result);
+                nativeWorkbench?.NoteChange(result);
                 applyResultsPanel.ShowResult(result);
                 SetStatusText(TuningResultFormatter.FriendlySummary(result));
                 PrependResult(TuningResultFormatter.Report(result) + Environment.NewLine);
@@ -293,6 +301,7 @@ namespace ZenStatesDebugTool
             var viewMenu = new ToolStripMenuItem("View");
             menuStrip.Items.Add(viewMenu);
             var tools = new ToolStripMenuItem("Tools");
+            tools.DropDownItems.Add("Native CO workbench", null, (sender, args) => ShowNativeWorkbench());
             tools.DropDownItems.Add("CPU overview and capabilities", null, (sender, args) => ShowCpuOverview());
             tools.DropDownItems.Add("Driver diagnostics and maintenance", null, (sender, args) =>
             {
@@ -1171,7 +1180,7 @@ namespace ZenStatesDebugTool
         {
             try
             {
-                var status = await RunHardwareAsync(() => Hardware.Locked(() => cpu.DisableOcMode()));
+                var status = await RunHardwareWriteAsync(() => Hardware.Locked(() => cpu.DisableOcMode()));
                 if (!shuttingDown) SetStatusText("Disable OC Mode: " + status);
             }
             catch (Exception ex) { if (!shuttingDown) HandleError(ex.Message); }
@@ -1407,7 +1416,7 @@ namespace ZenStatesDebugTool
             if (values.Count == 0) { SetStatusText("No validated core targets are available for manual OC."); return; }
             try
             {
-                bool ok = await RunHardwareAsync(() => Hardware.Locked(() =>
+                bool ok = await RunHardwareWriteAsync(() => Hardware.Locked(() =>
                 {
                     if (!EnableOCMode(true)) return false;
                     foreach (var kv in values)
@@ -1438,7 +1447,7 @@ namespace ZenStatesDebugTool
                 bool svi3 = SmuDecodeAdapter.IsSvi3(cpu.info.codeName);
                 uint vid = VoltageCodec.VoltageToVid(volts, svi3);
 
-                bool ok = await RunHardwareAsync(() => Hardware.Locked(() => EnableOCMode(true) && cpu.SetOverclockCpuVid(vid) == SMU.Status.OK));
+                bool ok = await RunHardwareWriteAsync(() => Hardware.Locked(() => EnableOCMode(true) && cpu.SetOverclockCpuVid(vid) == SMU.Status.OK));
                 if (ok)
                 {
                     // Report the voltage actually applied (derived from the VID), which can
@@ -1660,7 +1669,7 @@ namespace ZenStatesDebugTool
                     Debug.WriteLine("ARG0        : 0x" + Convert.ToString(args[0], 16).ToUpper());
 
                     uint[] argsLocal = args;
-                    SMU.Status status = await RunHardwareAsync(() => Hardware.Locked(() => cpu.smu.SendSmuCommand(testMailbox, command, ref argsLocal)));
+                    SMU.Status status = await RunHardwareWriteAsync(() => Hardware.Locked(() => cpu.smu.SendSmuCommand(testMailbox, command, ref argsLocal)));
                     args = argsLocal;
 
                     if (status == SMU.Status.OK)
@@ -1744,7 +1753,7 @@ namespace ZenStatesDebugTool
                     TryConvertToUint(textBoxPciAddress.Text, out uint address);
                     TryConvertToUint(textBoxPciValue.Text, out uint data);
 
-                    bool res = await RunHardwareAsync(() => Hardware.Locked(() =>
+                    bool res = await RunHardwareWriteAsync(() => Hardware.Locked(() =>
                         cpu.WriteDwordEx(cpu.smu.SMU_OFFSET_ADDR, address) &&
                         cpu.WriteDwordEx(cpu.smu.SMU_OFFSET_DATA, data)));
 
@@ -2243,7 +2252,7 @@ namespace ZenStatesDebugTool
             pstateReadId = null;
             btnPstateWrite.Enabled = false;
             PStateWriteResult result;
-            try { result = await RunHardwareAsync(() => hardware.WritePStateFrequency(item.Id, decodeContext.PStateLayout, fid, did)); }
+            try { result = await RunHardwareWriteAsync(() => hardware.WritePStateFrequency(item.Id, decodeContext.PStateLayout, fid, did)); }
             catch (Exception ex) { if (!shuttingDown) SetStatusText(ex.Message); return; }
             if (shuttingDown) return;
             if (result.Success)
@@ -2377,7 +2386,7 @@ namespace ZenStatesDebugTool
                         return;
                     }
 
-                    bool accepted = await RunHardwareAsync(() => Hardware.Locked(() => EnableOCMode(false)));
+                    bool accepted = await RunHardwareWriteAsync(() => Hardware.Locked(() => EnableOCMode(false)));
                     if (!accepted) { SetStatusText("OC mode command rejected."); return; }
                 }
 
@@ -2446,7 +2455,7 @@ namespace ZenStatesDebugTool
                 TryConvertToUint(textBoxMsrEax.Text, out uint eax);
                 TryConvertToUint(textBoxMsrAddress.Text, out uint msr);
 
-                if (!await RunHardwareAsync(() => hardware.WriteMsr(msr, eax, edx)))
+                if (!await RunHardwareWriteAsync(() => hardware.WriteMsr(msr, eax, edx)))
                 {
                     HandleError($@"Error writing MSR {textBoxMsrAddress.Text}!");
                     return;
@@ -2734,7 +2743,7 @@ namespace ZenStatesDebugTool
                 if (command == null) return;
                 if (!_hardwareReady || shuttingDown) { SetStatusText("Hardware is still loading or closing."); return; }
                 if (!acpiUi.TryArgument(out uint value, out string error)) { acpiUi.Result.Text = error; return; }
-                var response = await RunHardwareAsync(() => Hardware.Locked(() => WMI.RunCommand(classInstance, command.value, value)));
+                var response = await RunHardwareWriteAsync(() => Hardware.Locked(() => WMI.RunCommand(classInstance, command.value, value)));
                 if (shuttingDown) return;
                 string message = command.Help.ResponseText(response, value);
                 if (comboBoxAvailableCommands.SelectedItem == command) acpiUi.Result.Text = message;
@@ -2757,7 +2766,7 @@ namespace ZenStatesDebugTool
                     HandleError("Invalid BCLK value.");
                     return;
                 }
-                double? currentBclk = await RunHardwareAsync(() => Hardware.Locked(() =>
+                double? currentBclk = await RunHardwareWriteAsync(() => Hardware.Locked(() =>
                 {
                     cpu.SetBclk(targetBclk);
                     return cpu.GetBclk();
@@ -3149,8 +3158,8 @@ namespace ZenStatesDebugTool
 
                 if (cmdItem != null)
                 {
-                    await RunHardwareAsync(() => Hardware.Locked(() => WMI.RunCommand(classInstance, cmdItem.value, ccd0)));
-                    await RunHardwareAsync(() => Hardware.Locked(() => WMI.RunCommand(classInstance, cmdItem.value, ccd1)));
+                    await RunHardwareWriteAsync(() => Hardware.Locked(() => WMI.RunCommand(classInstance, cmdItem.value, ccd0)));
+                    await RunHardwareWriteAsync(() => Hardware.Locked(() => WMI.RunCommand(classInstance, cmdItem.value, ccd1)));
                 }
 
                 cmdItem = comboBoxAvailableCommands.Items
@@ -3159,7 +3168,7 @@ namespace ZenStatesDebugTool
 
                 if (cmdItem != null)
                 {
-                    await RunHardwareAsync(() => Hardware.Locked(() => WMI.RunCommand(classInstance, cmdItem.value, smt)));
+                    await RunHardwareWriteAsync(() => Hardware.Locked(() => WMI.RunCommand(classInstance, cmdItem.value, smt)));
                 }
 
                 ConfirmWindowsRestart();
@@ -3179,8 +3188,8 @@ namespace ZenStatesDebugTool
 
                 if (cmdItem != null)
                 {
-                    await RunHardwareAsync(() => Hardware.Locked(() => WMI.RunCommand(classInstance, cmdItem.value, 0x8000)));
-                    await RunHardwareAsync(() => Hardware.Locked(() => WMI.RunCommand(classInstance, cmdItem.value, 0x81FF)));
+                    await RunHardwareWriteAsync(() => Hardware.Locked(() => WMI.RunCommand(classInstance, cmdItem.value, 0x8000)));
+                    await RunHardwareWriteAsync(() => Hardware.Locked(() => WMI.RunCommand(classInstance, cmdItem.value, 0x81FF)));
                 }
 
                 cmdItem = comboBoxAvailableCommands.Items
@@ -3189,7 +3198,7 @@ namespace ZenStatesDebugTool
 
                 if (cmdItem != null)
                 {
-                    await RunHardwareAsync(() => Hardware.Locked(() => WMI.RunCommand(classInstance, cmdItem.value, 0)));
+                    await RunHardwareWriteAsync(() => Hardware.Locked(() => WMI.RunCommand(classInstance, cmdItem.value, 0)));
                 }
 
                 ConfirmWindowsRestart();
@@ -3209,8 +3218,8 @@ namespace ZenStatesDebugTool
 
                 if (cmdItem != null)
                 {
-                    await RunHardwareAsync(() => Hardware.Locked(() => WMI.RunCommand(classInstance, cmdItem.value, 0x8000)));
-                    await RunHardwareAsync(() => Hardware.Locked(() => WMI.RunCommand(classInstance, cmdItem.value, 0x8100)));
+                    await RunHardwareWriteAsync(() => Hardware.Locked(() => WMI.RunCommand(classInstance, cmdItem.value, 0x8000)));
+                    await RunHardwareWriteAsync(() => Hardware.Locked(() => WMI.RunCommand(classInstance, cmdItem.value, 0x8100)));
                 }
 
                 cmdItem = comboBoxAvailableCommands.Items
@@ -3219,7 +3228,7 @@ namespace ZenStatesDebugTool
 
                 if (cmdItem != null)
                 {
-                    await RunHardwareAsync(() => Hardware.Locked(() => WMI.RunCommand(classInstance, cmdItem.value, 1)));
+                    await RunHardwareWriteAsync(() => Hardware.Locked(() => WMI.RunCommand(classInstance, cmdItem.value, 1)));
                 }
 
                 ConfirmWindowsRestart();

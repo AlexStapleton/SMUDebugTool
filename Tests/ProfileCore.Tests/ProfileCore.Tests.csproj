@@ -7,6 +7,9 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\..\Utils\CpuOverview.cs" />
+    <Compile Include="..\..\Utils\NativeCoreVid.cs" />
+    <Compile Include="..\..\Utils\NativeCoSession.cs" />
+    <Compile Include="..\..\NativeCoWorkbenchForm.cs" />
     <Compile Include="..\..\CpuOverviewForm.cs" />
     <Compile Include="..\..\TuningPreviewForm.cs" />
     <Compile Include="..\..\TuningHistoryForm.cs" />
