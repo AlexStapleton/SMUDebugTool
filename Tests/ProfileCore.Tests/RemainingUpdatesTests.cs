@@ -210,6 +210,38 @@ namespace ProfileCore.Tests
 
     public class DriverMaintenanceTests
     {
+        [Theory]
+        [InlineData(@"System32\Drivers\inpoutx64.sys")]
+        [InlineData(@"system32\drivers\inpoutx64.sys")]
+        [InlineData(@"\SystemRoot\System32\Drivers\inpoutx64.sys")]
+        [InlineData(@"C:\Windows\System32\Drivers\inpoutx64.sys")]
+        [InlineData(@"\??\C:\Windows\System32\Drivers\inpoutx64.sys")]
+        [InlineData(@"\\?\C:\Windows\System32\Drivers\inpoutx64.sys")]
+        [InlineData("  \"System32\\Drivers\\inpoutx64.sys\"  ")]
+        [InlineData("System32/Drivers/inpoutx64.sys")]
+        public void DriverServicePathsResolveWithoutUsingTheApplicationDirectory(string path)
+            => Assert.Equal(@"C:\Windows\System32\Drivers\inpoutx64.sys", DriverImagePath.Resolve(path, @"C:\Windows"), ignoreCase: true);
+        [Fact]
+        public void DriverServicePathExpandsWindowsEnvironmentVariable()
+            => Assert.Equal(System.IO.Path.Combine(Environment.GetEnvironmentVariable("SystemRoot"), @"System32\Drivers\inpoutx64.sys"),
+                DriverImagePath.Resolve(@"%SystemRoot%\System32\Drivers\inpoutx64.sys", @"C:\Unused"), ignoreCase: true);
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        [InlineData("   ")]
+        [InlineData(@"inpoutx64.sys")]
+        [InlineData(@"C:inpoutx64.sys")]
+        [InlineData(@"\Drivers\inpoutx64.sys")]
+        [InlineData(@"%UnknownDriverRoot%\inpoutx64.sys")]
+        public void AmbiguousDriverPathsCannotBecomeCurrentDirectoryPaths(string path)
+            => Assert.Throws<System.IO.InvalidDataException>(() => DriverImagePath.Resolve(path, @"C:\Windows"));
+        [Fact]
+        public void DiagnosticsExposeOriginalPathAndUnavailableHash()
+        {
+            string report = new DriverStateSnapshot { RawImagePath = @"System32\Drivers\inpoutx64.sys" }.ToString();
+            Assert.Contains(@"Registry ImagePath: System32\Drivers\inpoutx64.sys", report);
+            Assert.Contains("SHA256: Unavailable", report);
+        }
         private sealed class Scope : IDisposable { public void Dispose() { } }
         private sealed class Fake : IDriverMaintenanceEnvironment
         {

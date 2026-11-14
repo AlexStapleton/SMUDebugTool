@@ -11,6 +11,29 @@ namespace ProfileCore.Tests
 {
     public class TuningServiceTests
     {
+        [Fact]
+        public void PptOnlyActionHasOneHumanResultWithoutClaimingReadback()
+        {
+            var fake = new Fake();
+            var result = new TuningService(fake).Apply(new Profile { PptWatts = 75 });
+            Assert.Equal(1, fake.Writes); Assert.Equal(0, fake.Reads);
+            var row = Assert.Single(TuningResultFormatter.DisplayRows(result, true));
+            Assert.Equal("PPT", row.Setting); Assert.Equal("75 W", row.Requested);
+            Assert.Equal("Sent; readback unavailable", row.Result);
+            Assert.Contains("PPT 75 W", TuningResultFormatter.FriendlySummary(result));
+            Assert.DoesNotContain("Confirmed", TuningResultFormatter.FriendlySummary(result));
+        }
+        [Fact]
+        public void OverviewGroupsSuccessfulCoresButPreservesIndividualErrorsAndFullDetails()
+        {
+            var result = new TuningResult();
+            for (int i = 0; i < 16; i++) result.Rows.Add(new TuningRow { Request = Co(-25, i), Outcome = i < 14 ? TuningOutcome.Verified : TuningOutcome.Mismatch });
+            var overview = TuningResultFormatter.DisplayRows(result, true);
+            Assert.Equal(3, overview.Count);
+            Assert.Equal("14 cores", overview[0].Requested);
+            Assert.Contains("Core 14", overview[1].Setting); Assert.Contains("Core 15", overview[2].Setting);
+            Assert.Equal(16, TuningResultFormatter.DisplayRows(result, false).Count);
+        }
         private sealed class Fake : ITuningTransport
         {
             public int Writes, Reads;

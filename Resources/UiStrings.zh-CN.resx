@@ -360,4 +360,59 @@
   <data name="Margin" xml:space="preserve">
     <value>偏移量</value>
   </data>
+  <data name="{0} cores" xml:space="preserve">
+    <value>{0} 个核心</value>
+  </data>
+  <data name="{0} tiers" xml:space="preserve">
+    <value>{0} 个档位</value>
+  </data>
+  <data name="0 leaves a power limit unchanged." xml:space="preserve">
+    <value>功率限制设为 0 时保持不变。</value>
+  </data>
+  <data name="Activity log" xml:space="preserve">
+    <value>活动日志</value>
+  </data>
+  <data name="Apply all settings" xml:space="preserve">
+    <value>应用所有设置</value>
+  </data>
+  <data name="Apply results" xml:space="preserve">
+    <value>应用结果</value>
+  </data>
+  <data name="Confirmed" xml:space="preserve">
+    <value>已确认</value>
+  </data>
+  <data name="Failed" xml:space="preserve">
+    <value>失败</value>
+  </data>
+  <data name="Invalid value or target" xml:space="preserve">
+    <value>数值或目标无效</value>
+  </data>
+  <data name="No settings requested." xml:space="preserve">
+    <value>未请求任何设置。</value>
+  </data>
+  <data name="Not applied" xml:space="preserve">
+    <value>未应用</value>
+  </data>
+  <data name="Not attempted" xml:space="preserve">
+    <value>未尝试</value>
+  </data>
+  <data name="Readback differs" xml:space="preserve">
+    <value>回读值不符</value>
+  </data>
+  <data name="Rejected" xml:space="preserve">
+    <value>已拒绝</value>
+  </data>
+  <data name="Result" xml:space="preserve">
+    <value>结果</value>
+  </data>
+  <data name="Sent; readback unavailable" xml:space="preserve">
+    <value>已发送；无法回读</value>
+  </data>
+  <data name="Technical details" xml:space="preserve">
+    <value>技术详情</value>
+  </data>
+  <data name="Tier" xml:space="preserve">
+    <value>档位</value>
+  </data>
+  <data name="sent without readback" xml:space="preserve"><value>已发送但无法回读</value></data>
 </root>
