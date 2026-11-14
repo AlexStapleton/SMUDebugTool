@@ -33,10 +33,10 @@ fallback and invariant numeric formatting.
 [zenpower (github)](https://github.com/ocerman/zenpower)  
 [Linux kernel (github)](https://github.com/torvalds/linux)  
 [AMD's public documentation](https://www.amd.com/en/support/tech-docs)  
+
 # Upstream updates
 
 The daily [Upstream sync workflow](.github/workflows/upstream-sync.yml) opens a
 reviewable merge PR and runs CI when `irusanov/SMUDebugTool` changes. Conflicts are
 reported in one issue; the bot never force-pushes, merges master or publishes a
 release. See [the synchronization policy and reconciliation ledger](docs/upstream-sync.md).
-
