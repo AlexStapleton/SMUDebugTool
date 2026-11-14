@@ -33,7 +33,9 @@ namespace ProfileCore.Tests
                         var panel = TuningResultsPanel.Attach(log);
                         panel.Controls.Add(translated);
                         UiText.Apply(form);
-                        panel.ShowResult(new TuningResult());
+                        var result = new TuningResult();
+                        result.Rows.Add(new TuningRow { Request = new TuningRequest { Kind = TuningKind.Ppt, Value = 75 }, Outcome = TuningOutcome.AcceptedUnverified });
+                        panel.ShowResult(result);
                         string summary = panel.Controls.OfType<Panel>().Single().Controls.OfType<Label>().Single().Text;
                         Thread.CurrentThread.CurrentUICulture = CultureInfo.GetCultureInfo("zh-CN");
                         UiText.Apply(form);
@@ -45,7 +47,8 @@ namespace ProfileCore.Tests
                             panel.Font = scaledFont; panel.PerformLayout();
                             var bar = panel.Controls.OfType<Panel>().Single(); bar.PerformLayout();
                             Assert.True(bar.Height >= panel.Font.Height + 10);
-                            Assert.True(log.Top >= bar.Bottom);
+                            Assert.False(log.Visible);
+                            Assert.True(panel.Controls.OfType<DataGridView>().Single().Top >= bar.Bottom);
                             panel.Font = SystemFonts.DefaultFont;
                         }
                         Thread.CurrentThread.CurrentUICulture = CultureInfo.GetCultureInfo("en"); UiText.Apply(form);

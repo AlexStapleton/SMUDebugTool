@@ -69,6 +69,74 @@ namespace ZenStatesDebugTool
 
     public static class TuningResultFormatter
     {
+        public static string SettingName(TuningRequest request)
+        {
+            switch (request.Kind)
+            {
+                case TuningKind.CurveOptimizer: return UiText.T("Curve Optimizer") + " / " + UiText.T("Core " + request.Index);
+                case TuningKind.CurveShaper: return UiText.T("Curve Shaper") + " / " + UiText.T("Tier") + " " + request.Index;
+                case TuningKind.Ppt: return "PPT";
+                case TuningKind.Tdc: return "TDC";
+                case TuningKind.Edc: return "EDC";
+                case TuningKind.Scalar: return UiText.T("PBO Scalar");
+                default: return "FMax";
+            }
+        }
+        public static string FriendlyOutcome(TuningOutcome outcome)
+        {
+            switch (outcome)
+            {
+                case TuningOutcome.Verified: return UiText.T("Confirmed");
+                case TuningOutcome.AcceptedUnverified: return UiText.T("Sent; readback unavailable");
+                case TuningOutcome.Mismatch: return UiText.T("Readback differs");
+                case TuningOutcome.Skipped: return UiText.T("Not applied");
+                case TuningOutcome.Rejected: return UiText.T("Rejected");
+                case TuningOutcome.Invalid: return UiText.T("Invalid value or target");
+                case TuningOutcome.NotAttempted: return UiText.T("Not attempted");
+                default: return UiText.T("Failed");
+            }
+        }
+        public static string FriendlySummary(TuningResult result)
+        {
+            if (result.Rows.Count == 0) return UiText.T("No settings requested.");
+            if (result.Rows.Count == 1)
+            {
+                var row = result.Rows[0];
+                return $"{SettingName(row.Request)} {row.Request.Requested} {row.Request.Unit} — {FriendlyOutcome(row.Outcome)}";
+            }
+            return string.Join("; ", result.Rows.GroupBy(r => r.Outcome).Select(g => g.Count() + " " +
+                (g.Key == TuningOutcome.AcceptedUnverified ? UiText.T("sent without readback") :
+                 g.Key == TuningOutcome.Verified ? UiText.T("confirmed") : FriendlyOutcome(g.Key))));
+        }
+        public sealed class DisplayRow
+        {
+            public string Setting { get; set; }
+            public string Requested { get; set; }
+            public string Result { get; set; }
+            public string Observed { get; set; }
+        }
+        public static List<DisplayRow> DisplayRows(TuningResult result, bool groupCores)
+        {
+            var rows = new List<DisplayRow>();
+            foreach (var group in result.Rows.GroupBy(r => new { r.Request.Kind, r.Outcome }))
+            {
+                var first = group.First();
+                if (groupCores && group.Count() > 1 && !first.IsError &&
+                    (first.Request.Kind == TuningKind.CurveOptimizer || first.Request.Kind == TuningKind.CurveShaper))
+                    rows.Add(new DisplayRow {
+                        Setting = UiText.T(first.Request.Kind == TuningKind.CurveOptimizer ? "Curve Optimizer" : "Curve Shaper"),
+                        Requested = string.Format(UiText.T(first.Request.Kind == TuningKind.CurveOptimizer ? "{0} cores" : "{0} tiers"), group.Count()),
+                        Result = FriendlyOutcome(first.Outcome)
+                    });
+                else foreach (var row in group)
+                    rows.Add(new DisplayRow {
+                        Setting = SettingName(row.Request), Requested = row.Request.Requested + " " + row.Request.Unit,
+                        Result = FriendlyOutcome(row.Outcome),
+                        Observed = row.Read?.Value?.ToString(CultureInfo.InvariantCulture) + (row.Read?.Value != null ? " " + row.Request.Unit : "")
+                    });
+            }
+            return rows;
+        }
         private static string Reply(TuningReply reply)
         {
             if (reply == null) return "unavailable";

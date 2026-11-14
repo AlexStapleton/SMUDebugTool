@@ -15,8 +15,28 @@ namespace ZenStatesDebugTool
     {
         public bool Present, LocalHandleOpen, OwnershipEstablished, UnknownConsumers = true;
         public int OtherInstances;
-        public string Path, ExpectedPath, Status, Hash, Error;
-        public override string ToString() => $"Service: inpoutx64\r\nStatus: {Status}\r\nPath: {Path}\r\nExpected path: {ExpectedPath}\r\nSHA256: {Hash}\r\nOwnership established: {OwnershipEstablished}\r\nLocal driver open: {LocalHandleOpen}\r\nOther participating instances: {OtherInstances}\r\nUnknown external consumers possible: {UnknownConsumers}\r\n{Error}";
+        public string RawImagePath, Path, ExpectedPath, Status, Hash, Error;
+        public override string ToString() => $"Service: inpoutx64\r\nStatus: {Status}\r\nRegistry ImagePath: {RawImagePath}\r\nPath: {Path}\r\nExpected path: {ExpectedPath}\r\nSHA256: {Hash ?? "Unavailable"}\r\nOwnership established: {OwnershipEstablished}\r\nLocal driver open: {LocalHandleOpen}\r\nOther participating instances: {OtherInstances}\r\nUnknown external consumers possible: {UnknownConsumers}\r\n{Error}";
+    }
+    internal static class DriverImagePath
+    {
+        // Driver ImagePath values such as System32\Drivers\foo.sys are Windows-relative,
+        // never relative to the application's current working directory.
+        internal static string Resolve(string imagePath, string windowsDirectory)
+        {
+            if (string.IsNullOrWhiteSpace(imagePath)) throw new InvalidDataException("Driver service ImagePath is missing.");
+            string path = imagePath.Trim();
+            if (path.Length >= 2 && path[0] == '"' && path[path.Length - 1] == '"') path = path.Substring(1, path.Length - 2);
+            path = Environment.ExpandEnvironmentVariables(path).Replace('/', '\\');
+            if (path.StartsWith(@"\??\", StringComparison.Ordinal) || path.StartsWith(@"\\?\", StringComparison.Ordinal)) path = path.Substring(4);
+            if (path.StartsWith(@"\SystemRoot\", StringComparison.OrdinalIgnoreCase))
+                path = System.IO.Path.Combine(windowsDirectory, path.Substring(12));
+            else if (path.StartsWith(@"System32\", StringComparison.OrdinalIgnoreCase))
+                path = System.IO.Path.Combine(windowsDirectory, path);
+            if (path.Length < 3 || !char.IsLetter(path[0]) || path[1] != ':' || path[2] != '\\')
+                throw new InvalidDataException("Unsupported or ambiguous driver service ImagePath: " + imagePath);
+            return System.IO.Path.GetFullPath(path);
+        }
     }
     public interface IDriverMaintenanceEnvironment
     {
@@ -112,19 +132,17 @@ namespace ZenStatesDebugTool
                 using (var key = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\" + Service))
                 {
                     state.Present = key != null;
-                    string path = key?.GetValue("ImagePath") as string;
-                    if (path != null)
+                    state.RawImagePath = key?.GetValue("ImagePath", null, RegistryValueOptions.DoNotExpandEnvironmentNames) as string;
+                    if (state.Present)
                     {
-                        path = Environment.ExpandEnvironmentVariables(path.Trim('"'));
-                        if (path.StartsWith(@"\SystemRoot\", StringComparison.OrdinalIgnoreCase))
-                            path = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), path.Substring(12));
-                        if (path.StartsWith(@"\??\", StringComparison.Ordinal)) path = path.Substring(4);
-                        state.Path = System.IO.Path.GetFullPath(path);
+                        try { state.Path = DriverImagePath.Resolve(state.RawImagePath, Environment.GetFolderPath(Environment.SpecialFolder.Windows)); }
+                        catch (Exception ex) { state.Error = ex.Message; }
                     }
                 }
                 if (state.Present) using (var service = new ServiceController(Service)) state.Status = service.Status.ToString();
                 else state.Status = "Not installed";
                 state.Hash = state.Path != null && File.Exists(state.Path) ? FileHash(state.Path) : null;
+                if (state.Present && state.Hash == null && state.Error == null) state.Error = "Driver file is missing or inaccessible at the resolved service path.";
                 using (var marker = Registry.LocalMachine.OpenSubKey(OwnershipKey))
                     state.OwnershipEstablished = state.Hash != null && state.Hash == marker?.GetValue("Sha256") as string
                         && string.Equals(state.Path, marker?.GetValue("Path") as string, StringComparison.OrdinalIgnoreCase);

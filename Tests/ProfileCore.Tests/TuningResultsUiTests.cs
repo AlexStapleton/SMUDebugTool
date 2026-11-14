@@ -38,12 +38,13 @@ namespace ProfileCore.Tests
                         Assert.Equal(1, table.GetRow(panel));
                         Assert.Same(panel, log.Parent);
                         Assert.Equal("Existing log", log.Text);
-                        Assert.True(log.Height > 0);
+                        Assert.False(log.Visible);
+                        var overview = panel.Controls.OfType<DataGridView>().Single();
                         var bar = panel.Controls.OfType<Panel>().Single();
                         bar.PerformLayout();
                         Assert.Equal(26, bar.Height);
-                        Assert.True(log.Top >= bar.Bottom);
-                        Assert.True(bar.Controls.OfType<Button>().Single().Height <= 26);
+                        Assert.True(overview.Top >= bar.Bottom);
+                        Assert.All(bar.Controls.OfType<Button>(), button => Assert.True(button.Height <= 26));
                         var result = new TuningResult();
                         result.Rows.Add(new TuningRow
                         {
@@ -54,16 +55,38 @@ namespace ProfileCore.Tests
                         });
                         panel.ShowResult(result);
                         Assert.Same(result, panel.Result);
-                        Assert.Contains("accepted (unverified)", panel.Controls.OfType<Panel>().Single().Controls.OfType<Label>().Single().Text);
+                        Assert.Contains("readback unavailable", panel.Controls.OfType<Panel>().Single().Controls.OfType<Label>().Single().Text);
+                        Assert.Equal(3, overview.Columns.Count);
                         using (var details = new ApplyResultsForm(result))
                         {
-                            details.CreateControl();
+                            details.Opacity = 0; details.Show();
                             var grid = details.Controls.OfType<DataGridView>().Single();
                             Assert.True(grid.ReadOnly); Assert.False(grid.AllowUserToAddRows);
                             Assert.Equal(FormBorderStyle.Sizable, details.FormBorderStyle);
                             Assert.Contains("Current settings", details.Text);
+                            Assert.Equal(4, grid.Columns.Count);
+                            Assert.False(details.Controls.OfType<TextBox>().Single().Visible);
+                            details.Controls.OfType<FlowLayoutPanel>().Single().Controls.OfType<CheckBox>().Single().Checked = true;
+                            Assert.True(details.Controls.OfType<TextBox>().Single().Visible);
                             using (var bitmap = new Bitmap(details.Width, details.Height))
                                 details.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size));
+                        }
+                        form.Opacity = 0; form.Show();
+                        Assert.True(overview.Visible); Assert.False(log.Visible);
+                        foreach (var kind in new[] { TuningKind.Ppt, TuningKind.Tdc, TuningKind.Edc, TuningKind.Scalar })
+                        {
+                            ZenStatesDebugTool.Profiles.Profile captured = null;
+                            using (var editor = new PowerLimitEditor(kind, new NumericUpDown { Value = kind == TuningKind.Scalar ? 3 : 75 },
+                                profile => { captured = profile; return Task.CompletedTask; }))
+                            {
+                                profileControls.Controls.Add(editor);
+                                editor.Controls.OfType<Button>().Single().PerformClick();
+                                Assert.NotNull(captured);
+                                Assert.Empty(captured.CoMargins); Assert.Null(captured.CurveShaperTiers); Assert.Null(captured.Fmax);
+                                var limits = new[] { captured.PptWatts, captured.TdcAmps, captured.EdcAmps, captured.PboScalar };
+                                Assert.Single(limits, value => value.HasValue);
+                                Assert.Equal(kind == TuningKind.Scalar ? 3 : 75, limits[(int)kind - (int)TuningKind.Ppt]);
+                            }
                         }
                     }
                     done.SetResult(true);

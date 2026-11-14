@@ -360,4 +360,60 @@
   <data name="Margin" xml:space="preserve">
     <value>Margin</value>
   </data>
+  <data name="{0} cores" xml:space="preserve">
+    <value>{0} cores</value>
+  </data>
+  <data name="{0} tiers" xml:space="preserve">
+    <value>{0} tiers</value>
+  </data>
+  <data name="0 leaves a power limit unchanged." xml:space="preserve">
+    <value>0 leaves a power limit unchanged.</value>
+  </data>
+  <data name="Activity log" xml:space="preserve">
+    <value>Activity log</value>
+  </data>
+  <data name="Apply all settings" xml:space="preserve">
+    <value>Apply all settings</value>
+  </data>
+  <data name="Apply results" xml:space="preserve">
+    <value>Apply results</value>
+  </data>
+  <data name="Confirmed" xml:space="preserve">
+    <value>Confirmed</value>
+  </data>
+  <data name="Failed" xml:space="preserve">
+    <value>Failed</value>
+  </data>
+  <data name="Invalid value or target" xml:space="preserve">
+    <value>Invalid value or target</value>
+  </data>
+  <data name="No settings requested." xml:space="preserve">
+    <value>No settings requested.</value>
+  </data>
+  <data name="Not applied" xml:space="preserve">
+    <value>Not applied</value>
+  </data>
+  <data name="Not attempted" xml:space="preserve">
+    <value>Not attempted</value>
+  </data>
+  <data name="Readback differs" xml:space="preserve">
+    <value>Readback differs</value>
+  </data>
+  <data name="Rejected" xml:space="preserve">
+    <value>Rejected</value>
+  </data>
+  <data name="Result" xml:space="preserve">
+    <value>Result</value>
+  </data>
+  <data name="Sent; readback unavailable" xml:space="preserve">
+    <value>Sent; readback unavailable</value>
+  </data>
+  <data name="Technical details" xml:space="preserve">
+    <value>Technical details</value>
+  </data>
+  <data name="Tier" xml:space="preserve">
+    <value>Tier</value>
+  </data>
+  <data name="confirmed" xml:space="preserve"><value>confirmed</value></data>
+  <data name="sent without readback" xml:space="preserve"><value>sent without readback</value></data>
 </root>

@@ -142,7 +142,7 @@ namespace ZenStatesDebugTool
                 var result = await RunHardwareAsync(() => profileApplier.Apply(profile, cpu, Hardware.ClosingToken));
                 if (shuttingDown || IsDisposed) return;
                 applyResultsPanel.ShowResult(result);
-                SetStatusText(result.Summary);
+                SetStatusText(TuningResultFormatter.FriendlySummary(result));
                 PrependResult(TuningResultFormatter.Report(result) + Environment.NewLine);
                 // Retain only tiers whose own write was accepted, even in a partially failed batch.
                 _lastAppliedCurveShaper = CurveShaperCodec.MergeAccepted(_lastAppliedCurveShaper, result);
@@ -694,7 +694,7 @@ namespace ZenStatesDebugTool
             };
             buttonRow.Controls.Add(MakeBarButton("Save", ButtonSaveProfile_Click));
             buttonRow.Controls.Add(MakeBarButton("Load", ButtonLoadProfile_Click));
-            buttonRow.Controls.Add(MakeBarButton("Apply", ButtonApplyProfile_Click));
+            buttonRow.Controls.Add(MakeBarButton("Apply all settings", ButtonApplyProfile_Click));
             buttonRow.Controls.Add(MakeBarButton("Delete", ButtonDeleteProfile_Click));
 
             numericUpDownPpt = MakeLimitBox(0, 1000);
@@ -707,13 +707,14 @@ namespace ZenStatesDebugTool
             grid.Controls.Add(comboBoxProfiles, 1, r); r++;
             grid.Controls.Add(buttonRow, 0, r); grid.SetColumnSpan(buttonRow, 2); r++;
             grid.Controls.Add(MakeFieldLabel("PPT (W)"), 0, r);
-            grid.Controls.Add(numericUpDownPpt, 1, r); r++;
+            grid.Controls.Add(new PowerLimitEditor(TuningKind.Ppt, numericUpDownPpt, ApplyTuningAsync), 1, r); r++;
             grid.Controls.Add(MakeFieldLabel("TDC (A)"), 0, r);
-            grid.Controls.Add(numericUpDownTdc, 1, r); r++;
+            grid.Controls.Add(new PowerLimitEditor(TuningKind.Tdc, numericUpDownTdc, ApplyTuningAsync), 1, r); r++;
             grid.Controls.Add(MakeFieldLabel("EDC (A)"), 0, r);
-            grid.Controls.Add(numericUpDownEdc, 1, r); r++;
+            grid.Controls.Add(new PowerLimitEditor(TuningKind.Edc, numericUpDownEdc, ApplyTuningAsync), 1, r); r++;
             grid.Controls.Add(MakeFieldLabel("PBO Scalar"), 0, r);
-            grid.Controls.Add(numericUpDownPboScalar, 1, r); r++;
+            grid.Controls.Add(new PowerLimitEditor(TuningKind.Scalar, numericUpDownPboScalar, ApplyTuningAsync), 1, r); r++;
+            grid.Controls.Add(MakeFieldLabel("0 leaves a power limit unchanged."), 1, r); r++;
 
             // Startup-profile setting, moved here from the PBO tab so it sits with the other
             // profile controls (and is visible on every tab, not just PBO). It goes in its own
@@ -881,7 +882,7 @@ namespace ZenStatesDebugTool
                     }
                 }
                 ApplyProfileToUi(profile);
-                SetStatusText($"Profile '{name}' loaded into the form. Use Apply to send it to the CPU.");
+                SetStatusText($"Profile '{name}' loaded into the form. Use Apply all settings to send it to the CPU.");
             }
             catch (Exception ex)
             {
