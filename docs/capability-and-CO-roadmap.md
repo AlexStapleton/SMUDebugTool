@@ -38,7 +38,7 @@ Updated 14 November 2026. This document is now both the design and the change tr
 - Added driver-free packet, failure/cancellation, snapshot-isolation and UI tests. Build/test/package evidence and PR link are recorded below when complete.
 - Hardware validation remains pending. No live Cpu instance, tuning write, benchmark, driver maintenance or startup task was invoked during implementation/testing.
 
-Validation record: Release build passed with zero warnings/errors; **414 app tests** (32 new cases) and **9 upstream-bot tests** passed; package success/failure checks passed. Synthetic overview renders inspected at normal and doubled font sizes; corrected clipped headers/value cells. This does not establish live firmware behavior or mixed-monitor DPI correctness. PR link: pending. Release publication: not started.
+Validation record: Release build passed with zero warnings/errors; **414 app tests** (32 new cases) and **9 upstream-bot tests** passed; package success/failure checks passed. Synthetic overview renders inspected at normal and doubled font sizes; corrected clipped headers/value cells. This does not establish live firmware behavior or mixed-monitor DPI correctness. PR: [#22 — first CPU-overview milestone](https://github.com/AlexStapleton/SMUDebugTool/pull/22). Release publication: not started.
 
 ## Product goal
 
@@ -264,4 +264,5 @@ Resolved user preference: the HWiNFO sensor family is Core VIDs. Unresolved impl
 - [Maxon Cinebench technical information](https://www.maxon.net/en/tech-info-cinebench): workload/environment repeatability and version-specific automation. The currently published page documents Cinebench 2026; the user uses 2024, which needs its own adapter validation.
 - [AMD-authored WMI interface proposal](https://lore-kernel.gnuweeb.org/platform-driver-x86/20261010190543.563161-4-Shyam-sundar.S-k@amd.com/): firmware metadata, extra methods and setup-versus-active limitations. This is a proposed Linux driver/interface document, not proof of uniform Windows BIOS behavior.
 - App baseline inspected locally: `Utils/ZenStatesTuningTransport.cs`, `Utils/TuningService.cs`, `Utils/TopologySnapshot.cs`, `Utils/Hardware.cs`, `Utils/HardwareLifetime.cs`, `Utils/HardwareOperationRunner.cs`, `Utils/SmuDecodeAdapter.cs`, `Utils/AcpiCommandHelp.cs`, `Profiles/Profile.cs`, `Program.cs`, `Utils/StartupTaskService.cs` and monitor forms.
+
 
