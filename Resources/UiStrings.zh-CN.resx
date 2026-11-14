@@ -502,4 +502,79 @@
   <data name="Unknown" xml:space="preserve">
     <value>未知</value>
   </data>
+  <data name="Apply BCLK" xml:space="preserve">
+    <value>应用基准时钟</value>
+  </data>
+  <data name="Apply firmware setting" xml:space="preserve">
+    <value>应用固件设置</value>
+  </data>
+  <data name="Base clock (BCLK)" xml:space="preserve">
+    <value>基准时钟 (BCLK)</value>
+  </data>
+  <data name="CAS latency (tCL)" xml:space="preserve">
+    <value>CAS 延迟 (tCL)</value>
+  </data>
+  <data name="Choose a firmware-listed value, or type an equivalent value below." xml:space="preserve">
+    <value>选择固件列出的值，或在下方输入等效值。</value>
+  </data>
+  <data name="Enter a value in the displayed unit." xml:space="preserve">
+    <value>请按显示的单位输入数值。</value>
+  </data>
+  <data name="Firmware choices" xml:space="preserve">
+    <value>固件选项</value>
+  </data>
+  <data name="Firmware did not report allowed values." xml:space="preserve">
+    <value>固件未报告允许值。</value>
+  </data>
+  <data name="Firmware input range: {0} to {1}; step {2} {3}." xml:space="preserve">
+    <value>固件输入范围：{0} 至 {1}；步长 {2} {3}。</value>
+  </data>
+  <data name="Firmware range metadata is missing or inconsistent." xml:space="preserve">
+    <value>固件范围信息缺失或不一致。</value>
+  </data>
+  <data name="Firmware value (snapshot)" xml:space="preserve">
+    <value>固件值（快照）</value>
+  </data>
+  <data name="For example, enter 30 to request 30 cycles (CL30 for tCL). Use a value appropriate for your memory; 30 is an example, not a recommendation." xml:space="preserve">
+    <value>例如，输入 30 表示请求 30 个周期（tCL 即 CL30）。请使用适合内存的值；30 只是格式示例，并非建议值。</value>
+  </data>
+  <data name="Help" xml:space="preserve">
+    <value>帮助</value>
+  </data>
+  <data name="History" xml:space="preserve">
+    <value>历史记录</value>
+  </data>
+  <data name="memory clock cycles" xml:space="preserve">
+    <value>内存时钟周期</value>
+  </data>
+  <data name="Memory timing, expressed as a whole number of memory clock cycles. This is not nanoseconds or a voltage." xml:space="preserve">
+    <value>内存时序，以内存时钟周期的整数表示。不是纳秒或电压。</value>
+  </data>
+  <data name="New value" xml:space="preserve">
+    <value>新值</value>
+  </data>
+  <data name="No input value is needed for this read command." xml:space="preserve">
+    <value>此读取命令无需输入值。</value>
+  </data>
+  <data name="Not reported" xml:space="preserve">
+    <value>未报告</value>
+  </data>
+  <data name="Preview changes" xml:space="preserve">
+    <value>预览更改</value>
+  </data>
+  <data name="raw firmware units" xml:space="preserve">
+    <value>原始固件单位</value>
+  </data>
+  <data name="Read firmware" xml:space="preserve">
+    <value>读取固件</value>
+  </data>
+  <data name="Reading firmware input limits..." xml:space="preserve">
+    <value>正在读取固件输入限制……</value>
+  </data>
+  <data name="Recent actions" xml:space="preserve">
+    <value>最近操作</value>
+  </data>
+  <data name="Requested value" xml:space="preserve">
+    <value>请求值</value>
+  </data>
 </root>

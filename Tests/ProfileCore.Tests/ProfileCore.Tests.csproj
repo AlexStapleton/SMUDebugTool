@@ -7,6 +7,11 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\..\TuningPreviewForm.cs" />
+    <Compile Include="..\..\TuningHistoryForm.cs" />
+    <Compile Include="..\..\Utils\AcpiCommandHelp.cs" />
+    <Compile Include="..\..\Utils\TabGuidance.cs" />
+    <Compile Include="..\..\Utils\AcpiCommandControls.cs" />
+    <Compile Include="..\..\Utils\WmiCmdListItem.cs" />
     <Compile Include="..\..\Utils\TuningEditControls.cs" />
     <Compile Include="..\..\Utils\TuningEditSession.cs" />
     <Compile Include="..\..\Utils\PStateVidControls.cs" />

@@ -145,11 +145,6 @@ namespace ZenStatesDebugTool
                 if (TuningService.RequestsFromProfile(profile).Count == 0) { SetStatusText(UiText.T("No pending changes to apply.")); return; }
                 string validation = TuningService.ValidateProfileInput(profile) ?? hardware.Topology.Validate(profile);
                 if (validation != null) { HandleError(validation); return; }
-                using (var preview = new TuningPreviewForm(profile, editControls.Session, scope))
-                {
-                    if (preview.ShowDialog(this) != DialogResult.OK) { SetStatusText(UiText.T("Apply cancelled; no commands sent.")); return; }
-                    profile = preview.ApprovedProfile;
-                }
                 SetStatusText("Applying settings...");
                 var result = await RunHardwareAsync(() => profileApplier.Apply(profile, cpu, Hardware.ClosingToken));
                 if (shuttingDown || IsDisposed) return;
@@ -233,6 +228,7 @@ namespace ZenStatesDebugTool
             decodeContext = SmuDecodeAdapter.GetDecodeContext(cpu.info);
             DisplaySystemInfo();
             InitPStateEditor();
+            InitAcpiGuidance();
 
             PopulateMailboxesList(comboBoxMailboxSelect.Items);
 
@@ -280,6 +276,7 @@ namespace ZenStatesDebugTool
 
             // Built last, after every tab (including the dynamic Freq (OC) tab) exists, so the
             // controller's canonical list and View menu cover them all.
+            InitTabGuidance();
             BuildViewMenu();
 
             SetStatusText($"{cpu.info.codeName}. Loading hardware values...");
@@ -729,6 +726,7 @@ namespace ZenStatesDebugTool
             applyChangesButton = MakeBarButton("Apply changes", ApplyChanges_Click);
             discardEditsButton = MakeBarButton("Discard edits", DiscardEdits_Click);
             buttonRow.Controls.Add(applyChangesButton);
+            buttonRow.Controls.Add(MakeBarButton("Preview changes", PreviewChanges_Click));
             buttonRow.Controls.Add(MakeBarButton("Apply all settings", ButtonApplyProfile_Click));
             buttonRow.Controls.Add(discardEditsButton);
             buttonRow.Controls.Add(MakeBarButton("Delete", ButtonDeleteProfile_Click));
@@ -1636,7 +1634,8 @@ namespace ZenStatesDebugTool
                 try
                 {
                     uint[] args = ZenStates.Core.Utils.MakeCmdArgs();
-                    string[] userArgs = textBoxARG0.Text.Trim().Split(',');
+                    string[] userArgs = string.IsNullOrWhiteSpace(textBoxARG0.Text) ? new string[0] : textBoxARG0.Text.Trim().Split(',');
+                    if (userArgs.Length > args.Length) { HandleError("Enter at most six comma-separated hexadecimal arguments."); return; }
 
                     TryConvertToUint(textBoxCMDAddress.Text, out uint addrMsg);
                     TryConvertToUint(textBoxRSPAddress.Text, out uint addrRsp);
@@ -1649,9 +1648,6 @@ namespace ZenStatesDebugTool
 
                     for (var i = 0; i < userArgs.Length; i++)
                     {
-                        if (i == args.Length)
-                            break;
-
                         TryConvertToUint(userArgs[i], out uint temp);
                         args[i] = temp;
                     }
@@ -2661,13 +2657,16 @@ namespace ZenStatesDebugTool
                             var ID = (uint[])pack.GetPropertyValue("ID");
                             var IDString = (string[])pack.GetPropertyValue("IDString");
                             var Length = (byte)pack.GetPropertyValue("Length");
+                            uint[] flags = null;
+                            try { flags = pack.GetPropertyValue("property") as uint[]; } catch { }
 
-                            for (var i = 0; i < Length; ++i)
+                            for (var i = 0; i < Math.Min(Length, Math.Min(ID.Length, IDString.Length)); ++i)
                             {
                                 if (IDString[i] == "")
                                     break;
 
-                                items.Add(new WmiCmdListItem($"{IDString[i] + ": "}{ID[i]:X8}", ID[i], !IDString[i].StartsWith("Get")));
+                                items.Add(new WmiCmdListItem($"{IDString[i] + ": "}{ID[i]:X8}", ID[i], !IDString[i].StartsWith("Get", StringComparison.OrdinalIgnoreCase),
+                                    flags != null && i < flags.Length ? (uint?)flags[i] : null, true));
                             }
                         }
                         else
@@ -2704,35 +2703,26 @@ namespace ZenStatesDebugTool
         private async void ComboBoxAvailableCommands_SelectedIndexChanged(object sender, EventArgs e)
         {
             var command = comboBoxAvailableCommands.SelectedItem as WmiCmdListItem;
-            comboBoxAvailableValues.Items.Clear();
-            comboBoxAvailableValues.Enabled = textBoxWmiArgument.Enabled = false;
-            textBoxWmiArgument.Text = "";
+            int selection = ++acpiSelectionVersion;
             if (command == null) return;
-            if (!command.isSet) { comboBoxAvailableValues.Items.Add("Get commands don't support values"); comboBoxAvailableValues.SelectedIndex = 0; return; }
+            acpiUi.SetCommand(command.Help);
             try
             {
-                uint[] values = await RunHardwareAsync(() => Hardware.Locked(() =>
-                {
-                    var data = WMI.InvokeMethodAndGetValue(classInstance, "Getdvalues", "pack", "ID", command.value);
-                    return data == null ? null : (uint[])data.GetPropertyValue("DValuesBuffer");
-                }));
-                if (shuttingDown || comboBoxAvailableCommands.SelectedItem != command) return;
-                foreach (uint value in values ?? new uint[0])
-                    if (value != 0) comboBoxAvailableValues.Items.Add(new WmiCmdListItem(value.ToString(), value));
-                comboBoxAvailableValues.Enabled = comboBoxAvailableValues.Items.Count > 0;
-                textBoxWmiArgument.Enabled = true;
-                if (comboBoxAvailableValues.Items.Count > 0) comboBoxAvailableValues.SelectedIndex = 0;
+                var metadata = await RunHardwareAsync(() => Hardware.Locked(() => ReadAcpiMetadata(command)));
+                if (shuttingDown || selection != acpiSelectionVersion || comboBoxAvailableCommands.SelectedItem != command) return;
+                acpiUi.ShowMetadata(metadata);
             }
-            catch (Exception ex) { if (!shuttingDown) SetStatusText("ACPI values: " + ex.Message); }
+            catch (Exception ex) {
+                if (!shuttingDown && selection == acpiSelectionVersion) {
+                    acpiUi.ShowMetadata(AcpiValueMetadata.Unknown(command.value, "Firmware input limits are unavailable. Enter a documented value manually."));
+                    SetStatusText("ACPI input limits: " + ex.Message);
+                }
+            }
         }
 
         private void ComboBoxAvailableValues_SelectedIndexChanged(object sender, EventArgs e)
         {
-            WmiCmdListItem command = comboBoxAvailableCommands.SelectedItem as WmiCmdListItem;
-            if (command != null && command.isSet && comboBoxAvailableValues.Enabled)
-                textBoxWmiArgument.Text = comboBoxAvailableValues.Text;
-            else
-                textBoxWmiArgument.Text = "";
+            acpiUi?.SelectChoice();
         }
 
         private async void ButtonWmiCmdSend_Click(object sender, EventArgs e)
@@ -2741,28 +2731,15 @@ namespace ZenStatesDebugTool
             {
                 WmiCmdListItem command = comboBoxAvailableCommands.SelectedItem as WmiCmdListItem;
                 if (command == null) return;
-
-                uint value = 0;
-                if (command.isSet)
-                {
-                    if (!uint.TryParse(textBoxWmiArgument.Text.Trim(), out value))
-                    {
-                        HandleError("Enter a valid numeric argument (0 - 65535).");
-                        return;
-                    }
-                }
-
-                if (value < 0x10000)
-                {
-                    var response = await RunHardwareAsync(() => Hardware.Locked(() => WMI.RunCommand(classInstance, command.value, value)));
-                    var text = command.text + Environment.NewLine + "------------------------" + Environment.NewLine;
-                    foreach (byte b in response)
-                    {
-                        text += "0x" + b.ToString("X2") + Environment.NewLine;
-                    }
-                    text += "------------------------" + Environment.NewLine;
-                    PrependResult(text + Environment.NewLine);
-                }
+                if (!_hardwareReady || shuttingDown) { SetStatusText("Hardware is still loading or closing."); return; }
+                if (!acpiUi.TryArgument(out uint value, out string error)) { acpiUi.Result.Text = error; return; }
+                var response = await RunHardwareAsync(() => Hardware.Locked(() => WMI.RunCommand(classInstance, command.value, value)));
+                if (shuttingDown) return;
+                string message = command.Help.ResponseText(response, value);
+                if (comboBoxAvailableCommands.SelectedItem == command) acpiUi.Result.Text = message;
+                SetStatusText(message);
+                PrependResult(command.text + $"; raw argument={value}; " + message + Environment.NewLine +
+                    (response == null ? "No response" : BitConverter.ToString(response)) + Environment.NewLine);
 
             }
             catch (OperationCanceledException) { }

@@ -11,17 +11,19 @@ namespace ZenStatesDebugTool
         private readonly Label summary;
         private readonly DataGridView overview;
         private readonly Button details;
-        private readonly ComboBox recent;
+        private readonly Button historyButton;
+        private readonly TextBox diagnosticLog;
         private readonly TuningActionHistory history = new TuningActionHistory();
         public int HistoryCount => history.Entries.Count;
         public TuningResult Result { get; private set; }
         public TuningResultsPanel(TextBox log)
         {
             Dock = DockStyle.Fill;
+            diagnosticLog = log;
             var bar = new Panel { Dock = DockStyle.Top, Height = Math.Max(26, Font.Height + 10) };
             FontChanged += (s, e) => bar.Height = Math.Max(26, Font.Height + 10);
             details = new Button { Text = "Details", Dock = DockStyle.Right, Width = 65, AutoSize = true, Enabled = false };
-            var activity = new Button { Text = "Activity log", Dock = DockStyle.Right, AutoSize = true };
+            historyButton = new Button { Name = "buttonTuningHistory", Text = "History", Dock = DockStyle.Right, AutoSize = true };
             summary = new Label
             {
                 Text = "No apply results yet.",
@@ -30,38 +32,26 @@ namespace ZenStatesDebugTool
                 TextAlign = System.Drawing.ContentAlignment.MiddleLeft
             };
             details.Click += (sender, args) => { if (Result != null) new ApplyResultsForm(Result).Show(FindForm()); };
-            activity.Click += (sender, args) => ApplyResultsForm.ShowDiagnosticLog(FindForm(), log.Text);
+            historyButton.Click += (sender, args) => new TuningHistoryForm(history.Entries, diagnosticLog.Text).Show(FindForm());
             bar.Controls.Add(summary);
-            bar.Controls.Add(activity);
+            bar.Controls.Add(historyButton);
             bar.Controls.Add(details);
             overview = CreateGrid(false);
-            recent = new ComboBox { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList,
-                AccessibleName = "Recent actions (this session)", DropDownWidth = 900, Visible = false };
-            recent.SelectedIndexChanged += (s, e) => { if (recent.SelectedItem is TuningHistoryEntry entry) DisplayResult(entry.Result); };
             log.Visible = false; // Keep the bounded diagnostic history without displaying it in the normal workflow.
             Controls.Add(log);
             Controls.Add(overview);
-            Controls.Add(recent);
             Controls.Add(bar);
         }
         public void ShowResult(TuningResult result)
         {
             history.Add(result);
-            PopulateHistory(0);
+            historyButton.Enabled = true;
+            DisplayResult(history.Entries[0].Result);
         }
         public void RefreshLanguage()
         {
-            if (history.Entries.Count > 0) PopulateHistory(Math.Max(0, recent.SelectedIndex));
+            if (history.Entries.Count > 0) DisplayResult(history.Entries[0].Result);
             else UiText.Apply(this);
-        }
-        private void PopulateHistory(int selected)
-        {
-            recent.BeginUpdate();
-            try {
-                recent.Items.Clear();
-                foreach (var entry in history.Entries) recent.Items.Add(entry);
-                recent.Visible = true; recent.SelectedIndex = selected;
-            } finally { recent.EndUpdate(); }
         }
         private void DisplayResult(TuningResult result)
         {
