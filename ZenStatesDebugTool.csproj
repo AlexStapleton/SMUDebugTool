@@ -49,6 +49,9 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Utils\CpuOverview.cs" />
+    <Compile Include="CpuOverviewForm.cs" />
+    <Compile Include="SettingsForm.CpuOverview.cs" />
     <Compile Include="TuningPreviewForm.cs" />
     <Compile Include="TuningHistoryForm.cs" />
     <Compile Include="SettingsForm.Acpi.cs" />

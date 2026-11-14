@@ -6,6 +6,8 @@
     <RootNamespace>ProfileCore.Tests</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="..\..\Utils\CpuOverview.cs" />
+    <Compile Include="..\..\CpuOverviewForm.cs" />
     <Compile Include="..\..\TuningPreviewForm.cs" />
     <Compile Include="..\..\TuningHistoryForm.cs" />
     <Compile Include="..\..\Utils\AcpiCommandHelp.cs" />

@@ -589,4 +589,15 @@
   <data name="not verified" xml:space="preserve">
     <value>未验证</value>
   </data>
+  <data name="CPU overview and capabilities" xml:space="preserve"><value>CPU 概览与功能</value></data>
+  <data name="Readings" xml:space="preserve"><value>读数</value></data>
+  <data name="Command map" xml:space="preserve"><value>命令映射</value></data>
+  <data name="Refresh snapshot" xml:space="preserve"><value>刷新快照</value></data>
+  <data name="Apply ceiling" xml:space="preserve"><value>应用温度上限</value></data>
+  <data name="Temperature ceiling" xml:space="preserve"><value>温度上限</value></data>
+  <data name="Requested temperature ceiling (°C)" xml:space="preserve"><value>请求的温度上限 (°C)</value></data>
+  <data name="No snapshot captured." xml:space="preserve"><value>尚未读取快照。</value></data>
+  <data name="Reading snapshot…" xml:space="preserve"><value>正在读取快照…</value></data>
+  <data name="Applying temperature ceiling…" xml:space="preserve"><value>正在应用温度上限…</value></data>
+  <data name="Evidence" xml:space="preserve"><value>依据</value></data>
 </root>

@@ -156,9 +156,9 @@ namespace ProfileCore.Tests
                 PboScalar = 2
             };
             var result = new ProfileApplier().Apply(profile, fake);
-            Assert.Equal(12, fake.Writes); Assert.Equal(8, fake.Reads);
-            Assert.Equal(8, result.Rows.Count(r => r.Outcome == TuningOutcome.Verified));
-            Assert.Equal(4, result.Rows.Count(r => r.Outcome == TuningOutcome.AcceptedUnverified));
+            Assert.Equal(12, fake.Writes); Assert.Equal(9, fake.Reads);
+            Assert.Equal(9, result.Rows.Count(r => r.Outcome == TuningOutcome.Verified));
+            Assert.Equal(3, result.Rows.Count(r => r.Outcome == TuningOutcome.AcceptedUnverified));
             Assert.True(result.Success);
         }
         [Fact]

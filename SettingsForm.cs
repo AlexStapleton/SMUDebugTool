@@ -293,6 +293,7 @@ namespace ZenStatesDebugTool
             var viewMenu = new ToolStripMenuItem("View");
             menuStrip.Items.Add(viewMenu);
             var tools = new ToolStripMenuItem("Tools");
+            tools.DropDownItems.Add("CPU overview and capabilities", null, (sender, args) => ShowCpuOverview());
             tools.DropDownItems.Add("Driver diagnostics and maintenance", null, (sender, args) =>
             {
                 var environment = new WindowsDriverMaintenanceEnvironment { LocalHandleOpen = !Hardware.IsClosing };

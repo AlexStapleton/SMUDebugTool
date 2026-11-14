@@ -589,4 +589,15 @@
   <data name="not verified" xml:space="preserve">
     <value>not verified</value>
   </data>
+  <data name="CPU overview and capabilities" xml:space="preserve"><value>CPU overview and capabilities</value></data>
+  <data name="Readings" xml:space="preserve"><value>Readings</value></data>
+  <data name="Command map" xml:space="preserve"><value>Command map</value></data>
+  <data name="Refresh snapshot" xml:space="preserve"><value>Refresh snapshot</value></data>
+  <data name="Apply ceiling" xml:space="preserve"><value>Apply ceiling</value></data>
+  <data name="Temperature ceiling" xml:space="preserve"><value>Temperature ceiling</value></data>
+  <data name="Requested temperature ceiling (°C)" xml:space="preserve"><value>Requested temperature ceiling (°C)</value></data>
+  <data name="No snapshot captured." xml:space="preserve"><value>No snapshot captured.</value></data>
+  <data name="Reading snapshot…" xml:space="preserve"><value>Reading snapshot…</value></data>
+  <data name="Applying temperature ceiling…" xml:space="preserve"><value>Applying temperature ceiling…</value></data>
+  <data name="Evidence" xml:space="preserve"><value>Evidence</value></data>
 </root>

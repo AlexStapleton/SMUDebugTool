@@ -115,7 +115,7 @@ namespace ZenStatesDebugTool
                     }
                     row.Outcome = TuningOutcome.AcceptedUnverified;
                     row.Reason = "Accepted; no supported direct readback.";
-                    if (row.Request.Kind != TuningKind.CurveOptimizer && row.Request.Kind != TuningKind.Fmax && row.Request.Kind != TuningKind.CurveShaper) continue;
+                    if (row.Request.Kind != TuningKind.CurveOptimizer && row.Request.Kind != TuningKind.Fmax && row.Request.Kind != TuningKind.CurveShaper && row.Request.Kind != TuningKind.Scalar) continue;
                     // Cancellation never hides an already accepted write.
                     if (cancellation.IsCancellationRequested) { row.Reason = "Accepted; cancelled before readback."; break; }
                     try { row.Read = transport.Read(row.Request); }
@@ -156,6 +156,7 @@ namespace ZenStatesDebugTool
                 case TuningKind.Edc:
                     if (r.Value < 0 || r.Value > 1000) return "PBO limit must be 0–1000."; break;
                 case TuningKind.Scalar: if (r.Value < 0 || r.Value > 10) return "Scalar must be 0–10."; break;
+                case TuningKind.Temperature: if (r.Value < 40 || r.Value > 95) return "Temperature request must be 40–95 °C (software guard, not a reported firmware range)."; break;
                 default: return "Unknown setting.";
             }
             return null;

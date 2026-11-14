@@ -11,8 +11,16 @@ namespace ZenStatesDebugTool
     {
         public uint CoMp1, CoRsmu, CoGetRsmu, FmaxRsmu, FmaxMp1, FmaxGetRsmu;
         public uint CurveShaperSetRsmu, CurveShaperGetRsmu;
+        public uint ScalarGetRsmu, TemperatureRsmu;
         public bool ApuFmaxArgument;
         private bool curveShaperGetterResponded;
+        public static decimal? DecodeScalar(uint word)
+        {
+            float value = BitConverter.ToSingle(BitConverter.GetBytes(word), 0);
+            // Converting float directly to decimal rounds to seven significant digits.
+            // Preserve its actual value so a near-match cannot become Confirmed.
+            return float.IsNaN(value) || float.IsInfinity(value) || value < 1 || value > 10 ? (decimal?)null : (decimal)(double)value;
+        }
         public TuningReply Execute(TuningRequest r, bool read, uint coreMask, Func<string, uint, uint[], TuningReply> send)
         {
             var args = new uint[6];
@@ -35,6 +43,13 @@ namespace ZenStatesDebugTool
                 command = read ? FmaxGetRsmu : FmaxRsmu != 0 ? FmaxRsmu : FmaxMp1;
                 if (!read && FmaxRsmu == 0) route = "MP1";
                 args[0] = read ? (ApuFmaxArgument ? 3U : 0U) : (uint)r.Value & 0xFFFFF;
+            }
+            else if (r.Kind == TuningKind.Scalar && read) command = ScalarGetRsmu;
+            else if (r.Kind == TuningKind.Temperature && !read)
+            {
+                if (r.Value != decimal.Truncate(r.Value) || r.Value < 40 || r.Value > 95)
+                    throw new ArgumentOutOfRangeException(nameof(r.Value));
+                command = TemperatureRsmu; args[0] = (uint)r.Value;
             }
             else throw new ArgumentOutOfRangeException(nameof(r.Kind));
             if (command == 0) return null;
@@ -66,7 +81,18 @@ namespace ZenStatesDebugTool
                     CurveShaperCodec.Unpack(payload[r.Index], out int observedLow, out int observedMedium, out int observedHigh);
                     reply.Value = observedLow; reply.Medium = observedMedium; reply.High = observedHigh;
                 }
-                else if (payload.Length > 0) reply.Value = r.Kind == TuningKind.CurveOptimizer ? unchecked((int)payload[0]) : (decimal)payload[0];
+                else if (payload.Length > 0)
+                {
+                    if (r.Kind == TuningKind.Scalar)
+                    {
+                        decimal? scalar = DecodeScalar(payload[0]);
+                        if (!scalar.HasValue)
+                            reply.ReadIssue = "Scalar getter returned an invalid multiplier; readback is inconclusive.";
+                        else reply.Value = scalar.Value;
+                    }
+                    else reply.Value = r.Kind == TuningKind.CurveOptimizer ? unchecked((int)payload[0]) : (decimal)payload[0];
+                }
+                else reply.ReadIssue = "Getter returned an empty payload; readback is inconclusive.";
             }
             return reply;
         }
@@ -95,6 +121,8 @@ namespace ZenStatesDebugTool
                 FmaxGetRsmu = cpu.smu.Rsmu.SMU_MSG_GetBoostLimitFrequency,
                 CurveShaperSetRsmu = cpu.smu.Rsmu.SMU_MSG_SetCurveShaperMargin,
                 CurveShaperGetRsmu = cpu.smu.Rsmu.SMU_MSG_GetCurveShaperMargin,
+                ScalarGetRsmu = cpu.smu.Rsmu.SMU_MSG_GetPBOScalar,
+                TemperatureRsmu = cpu.smu.Rsmu.SMU_MSG_SetTctlMax,
                 ApuFmaxArgument = cpu.smu.SMU_TYPE == SMU.SmuType.TYPE_APU0
             };
         }
@@ -111,12 +139,15 @@ namespace ZenStatesDebugTool
                     return commands.CoMp1 != 0 || commands.CoRsmu != 0;
                 case TuningKind.Fmax: return commands.FmaxRsmu != 0 || commands.FmaxMp1 != 0;
                 case TuningKind.CurveShaper: return commands.CurveShaperSetRsmu != 0;
+                case TuningKind.Temperature:
+                    reason = "Temperature editing is enabled only for the reviewed Raphael/Granite Ridge RSMU contract.";
+                    return CpuOverviewProvider.CanSetTemperature(cpu);
                 default: return true;
             }
         }
         public TuningReply Write(TuningRequest r)
         {
-            if (r.Kind == TuningKind.CurveOptimizer || r.Kind == TuningKind.Fmax || r.Kind == TuningKind.CurveShaper)
+            if (r.Kind == TuningKind.CurveOptimizer || r.Kind == TuningKind.Fmax || r.Kind == TuningKind.CurveShaper || r.Kind == TuningKind.Temperature)
             {
                 var reply = commands.Execute(r, false, topology.Find(r.Index)?.Mask ?? 0, Send);
                 if (reply != null && r.Kind == TuningKind.CurveOptimizer) reply.TargetIdentity = topology.Find(r.Index)?.Identity;

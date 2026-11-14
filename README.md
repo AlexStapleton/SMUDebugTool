@@ -1,5 +1,13 @@
 ZenStatesDebugTool
 
+### Roadmap progress
+
+The [capability and Curve Optimizer roadmap](docs/capability-and-CO-roadmap.md)
+is the living tracker for implemented changes, validation and remaining hardware gates.
+The first implementation adds **Tools → CPU overview and capabilities**, on-demand
+readings, scalar verification and a separate temperature-ceiling action. See the
+[v1.51.0 notes](docs/release-notes-1.51.0.md) for its scope and limitations.
+
 ### Build and package this fork
 
 Windows x64, .NET Framework 4.8 and the .NET SDK specified in `global.json` are required.
