@@ -414,6 +414,5 @@
   <data name="Tier" xml:space="preserve">
     <value>Tier</value>
   </data>
-  <data name="confirmed" xml:space="preserve"><value>confirmed</value></data>
   <data name="sent without readback" xml:space="preserve"><value>sent without readback</value></data>
 </root>

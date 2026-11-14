@@ -414,6 +414,5 @@
   <data name="Tier" xml:space="preserve">
     <value>档位</value>
   </data>
-  <data name="confirmed" xml:space="preserve"><value>已确认</value></data>
   <data name="sent without readback" xml:space="preserve"><value>已发送但无法回读</value></data>
 </root>

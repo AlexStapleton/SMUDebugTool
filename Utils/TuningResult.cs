@@ -106,7 +106,7 @@ namespace ZenStatesDebugTool
             }
             return string.Join("; ", result.Rows.GroupBy(r => r.Outcome).Select(g => g.Count() + " " +
                 (g.Key == TuningOutcome.AcceptedUnverified ? UiText.T("sent without readback") :
-                 g.Key == TuningOutcome.Verified ? UiText.T("confirmed") : FriendlyOutcome(g.Key))));
+                 FriendlyOutcome(g.Key))));
         }
         public sealed class DisplayRow
         {
