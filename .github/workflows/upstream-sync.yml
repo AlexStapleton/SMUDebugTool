@@ -1,0 +1,33 @@
+name: Upstream sync
+on:
+  schedule:
+    - cron: '17 14 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
+jobs:
+  sync:
+    if: github.repository == 'AlexStapleton/SMUDebugTool'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+      - name: Prepare and test upstream merge planner
+        run: python3 -m unittest discover -s Tests/UpstreamSync -v
+      - name: Prepare upstream pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          python3 scripts/sync_upstream.py

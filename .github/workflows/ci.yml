@@ -29,6 +29,9 @@ jobs:
       - name: Restore
         run: dotnet restore ZenStatesDebugTool.sln
 
+      - name: Test upstream sync planner
+        run: python -m unittest discover -s Tests/UpstreamSync -v
+
       - name: Build
         run: dotnet build ZenStatesDebugTool.sln --configuration Release --no-restore
 
