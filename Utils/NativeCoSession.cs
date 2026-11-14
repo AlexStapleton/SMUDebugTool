@@ -47,6 +47,7 @@ namespace ZenStatesDebugTool
         public List<string> Changes { get; set; } = new List<string>();
         public List<NativeCoreSummary> Cores { get; set; } = new List<NativeCoreSummary>();
         public string Context { get; set; }
+        public WorkloadResult ManagedWorkload { get; set; }
         [JsonIgnore] public string Display => Role + " / " + StartedUtc.ToLocalTime().ToString("HH:mm:ss") + " / " + (Score?.ToString(CultureInfo.InvariantCulture) ?? "no score") + " / " + (Context ?? State);
     }
     public sealed class NativeCoSession
@@ -56,9 +57,12 @@ namespace ZenStatesDebugTool
         private readonly Dictionary<int, long> effectiveCounts = new Dictionary<int, long>();
         private NativeCoTrial active;
         private long activeStarted;
+        private static WorkloadResult CopyWorkload(WorkloadResult value) => value == null ? null : new WorkloadResult { Outcome = value.Outcome, ExitCode = value.ExitCode,
+            Score = value.Score, Detail = value.Detail, Output = value.Output, ElapsedSeconds = value.ElapsedSeconds };
         private static NativeCoTrial Copy(NativeCoTrial trial) => new NativeCoTrial {
             Id = trial.Id, Role = trial.Role, Workload = trial.Workload, State = trial.State, StartedUtc = trial.StartedUtc, EndedUtc = trial.EndedUtc,
             Score = trial.Score, Start = trial.Start, End = trial.End, Context = trial.Context, Changes = new List<string>(trial.Changes),
+            ManagedWorkload = CopyWorkload(trial.ManagedWorkload),
             Cores = trial.Cores.Select(c => new NativeCoreSummary { Slot = c.Slot, Ccd = c.Ccd, Samples = c.Samples, BusySamples = c.BusySamples, MeanVid = c.MeanVid, BusyMeanVid = c.BusyMeanVid, MeanEffectiveMhz = c.MeanEffectiveMhz }).ToList()
         };
         public IReadOnlyList<NativeCoTrial> Trials { get { lock (gate) return trials.Select(Copy).ToArray(); } }
@@ -104,13 +108,21 @@ namespace ZenStatesDebugTool
                 active.State = "Ending"; active.EndedUtc = now;
             }
         }
-        public void End(NativeCoContext end, decimal? score)
+        public void End(NativeCoContext end, decimal? score, WorkloadResult managed = null)
         {
             lock (gate) {
                 if (active?.State != "Ending" || end == null || score <= 0 || score > 10000000) throw new InvalidOperationException("Invalid run end or score.");
-                active.End = end; active.Score = score; active.State = "Completed";
+                active.End = end; active.Score = score; active.State = managed?.Outcome ?? "Completed"; active.ManagedWorkload = CopyWorkload(managed);
                 active.Context = active.Changes.Count > 0 ? "Mixed: tuning activity" : Context(active.Start, end);
                 active = null;
+            }
+        }
+        public void Fail(WorkloadResult result)
+        {
+            lock (gate) {
+                if (active == null) return;
+                active.State = result.Outcome; active.Context = result.Detail; active.ManagedWorkload = CopyWorkload(result);
+                active.EndedUtc = active.EndedUtc ?? DateTimeOffset.UtcNow; active = null;
             }
         }
         public void Interrupt()
@@ -134,12 +146,13 @@ namespace ZenStatesDebugTool
         }
         public string Export()
         {
-            lock (gate) return JsonConvert.SerializeObject(new { SchemaVersion = 1, Source = "Native MSR per-core VID; no external imports", Notes = "VID is a request, not measured per-core voltage. Busy uses an effective/reported clock heuristic. Only CO endpoints are read back; no stability guarantee.", Trials = trials }, Formatting.Indented);
+            var snapshot = Trials;
+            return JsonConvert.SerializeObject(new { SchemaVersion = 1, Source = "Native MSR per-core VID; no external imports", Notes = "VID is a request, not measured per-core voltage. Busy uses an effective/reported clock heuristic. Only CO endpoints are read back; no stability guarantee.", Trials = snapshot }, Formatting.Indented);
         }
         public static string Compare(NativeCoTrial baseline, NativeCoTrial candidate)
         {
             if (baseline == null || candidate == null || baseline.Role != "Baseline" || candidate.Role != "Candidate" || baseline.State != "Completed" || candidate.State != "Completed") return "Select a completed candidate with an earlier baseline.";
-            var text = new StringBuilder("Native measurements; manual workload/score. No stability verdict.\r\n");
+            var text = new StringBuilder("Native measurements; workload/score source recorded per run. No stability verdict.\r\n");
             bool sameOtherSettings = TuningService.RequestsFromProfile(baseline.Start.EditorRequests).Where(r => r.Kind != TuningKind.CurveOptimizer).Select(r => r.Setting + ":" + r.Requested)
                 .SequenceEqual(TuningService.RequestsFromProfile(candidate.Start.EditorRequests).Where(r => r.Kind != TuningKind.CurveOptimizer).Select(r => r.Setting + ":" + r.Requested));
             bool comparable = baseline.Context == "CO endpoints unchanged" && candidate.Context == "CO endpoints unchanged" && baseline.Workload == candidate.Workload && baseline.Start.Hardware == candidate.Start.Hardware && baseline.Start.Topology == candidate.Start.Topology && sameOtherSettings;

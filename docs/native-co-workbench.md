@@ -6,7 +6,39 @@ negative CO trial. It does not require HWiNFO, CSV files, another driver or anot
 monitoring application. Hardware acceptance is pending; automated verification uses
 fake transports and synthetic data only.
 
-## Use
+## Managed tuning flow
+
+1. Start native monitoring and open **Managed tests**. Choose your local
+   **Cinebench 2024.1.0** executable; its path is remembered. Read load targets and
+   choose **All processors** for VID comparisons. Set minimum duration and timeout.
+2. Choose **Baseline: set every core to CO 0** for tuning from zero, or explicitly
+   keep current offsets. **Run baseline** preserves original direct CO readback,
+   verifies any reset, launches Cinebench and records the run/score. Other tuning
+   dimensions stay as configured. No automatic reset happens on opening the view.
+3. After successful completion, a qualified same-CCD suggestion may be available.
+   **Apply recorded -1 CO trial** checks the recorded context is unchanged and
+   applies/verifies one decrement. It uses busy samples captured during that run;
+   the CPU can be idle while you review the suggestion. No suggestion means the
+   eligibility conditions were not met, not that the CPU is fully optimized.
+4. **Run candidate** with the same recipe. Select the candidate in **Runs and
+   comparison** to inspect it against the preceding completed baseline. Repeat
+   before drawing a performance conclusion. One-thread/SMT core targets provide
+   rendering coverage; single-core load normally lacks the peers needed for a
+   VID-balancing proposal. Computational correctness/WHEA testing is still future work.
+5. Stop, timeout, stale capture, process failure or missing/ambiguous score ends
+   the owned test and pauses assistance. Only a new successful managed test or
+   explicit recovery clears that pause. Setup collapses while running to preserve
+   readable output; show it again to change the recipe.
+6. Finish with **Restore original CO**, or explicitly **Keep current CO / clear
+   recovery**. Closing stops the owned workload and capture while leaving applied
+   offsets in place. Pending recovery survives restart and blocks startup profile
+   apply. Clearing recovery does not save/promote a tuning profile.
+
+The program launches Cinebench for you; it does not bundle the executable. Its
+actual console/score behavior and load on the user's machine remain untested.
+See [managed workload protocol](managed-co-workloads.md).
+
+## Manual workload alternative
 
 1. Start monitoring. Default acquisition is 100 ms; 20 ms is an optional request.
    Check achieved batch interval, read-pass duration and sample age. **Show native
@@ -26,11 +58,11 @@ fake transports and synthetic data only.
    application tests. Lower/equal VID does not prove better performance or stability.
    Save the JSON session report before explicitly clearing runs for a new session.
 
-Closing stops capture and marks an active run interrupted. It leaves explicitly
+Closing stops capture/owned workload and marks an active run interrupted. It leaves explicitly
 applied offsets in place, like the existing tuning controls. Reports cannot be
 imported to apply/resume tuning. No experiment is automatically saved to a startup
-profile. Automatic search, workload control, WHEA correlation and recovery journals
-are not implemented in this milestone.
+profile. Managed workload control and original-CO recovery are implemented;
+automatic search, WHEA correlation and a full experiment phase journal remain future work.
 
 ## Source and identity contract
 
@@ -82,12 +114,14 @@ peers must be in the same CCD within 3% reported frequency. A requested VID at l
 12.5 mV above the peer median qualifies for one decrement, provided current CO is
 nonpositive and the new value respects the user's lower bound.
 
-Before applying, the program requires complete fresh native readings and direct
+Before a live trial, the program requires complete fresh native readings and direct
 CO context. Inside one serialized transaction it checks a usable direct scalar
 readback and re-reads the target CO, refusing if it changed. Scalar is mode evidence,
 not proof that all firmware state is known. The existing tuning service sends at
 most one CO setter and reads back the outcome. No retry, fallback target, automatic
-loop or other tuning dimension is added. Sampling history is invalidated around app
+loop or other tuning dimension is added. Recorded trials reuse a qualifying window
+from a completed managed run and require unchanged context before a fresh checked
+transaction. Sampling history is invalidated around app
 write attempts, including rejected attempts; in-flight old frames are discarded.
 
 Run summaries retain valid/requested VID means, busy-sample counts and effective
@@ -109,7 +143,8 @@ replaces the destination only after writing a temporary file successfully.
 Automated cases cover decoding, reordered processor groups, missing/ambiguous SMT,
 counter resets/gaps, affinity restoration, cancellation, in-flight invalidation,
 stale/unloaded/unstable windows, one-write verification, changed preconditions and
-mixed/comparison context. The fixture never constructs a live Cpu.
+mixed/comparison context, owned process trees, output limits and recovery. The
+process fixture performs no benchmark computation and never constructs a live Cpu.
 
 Hardware acceptance order:
 

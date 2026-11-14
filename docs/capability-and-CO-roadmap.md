@@ -22,9 +22,9 @@ Updated 14 November 2026. This document is now both the design and the change tr
 | C08 Channel timings | Planned | No new implementation. |
 | C09 DIMM/SPD/EXPO | Planned | No new implementation. |
 | C10 Guided firmware editor | Planned | Existing v1.50 metadata guidance retained; grouped editing not started. |
-| C11 Session recording | Partial implementation; hardware validation pending | Native baseline/candidate markers, manual scores, per-core summaries, mixed-context checks and JSON report export. No import. Repeated-run analysis and richer telemetry remain planned. |
-| C12 Assisted CO | One-step assistance implemented; hardware validation pending | Validated APIC/physical bindings, native VID/APERF windows, one explicit bounded negative step, fresh CO precondition and readback. Automated search remains deferred. |
-| C13 Validation/recovery | Planned before automatic search | No experiment journal, WHEA integration or automatic search is active. |
+| C11 Session recording | Managed/manual implementation; hardware validation pending | Cinebench 2024.1.0 process ownership, duration/timeout, parsed scores, baseline/candidate records and export. Repeated-run statistics and richer telemetry remain planned. |
+| C12 Assisted CO | Explicit live/recorded one-step trials implemented | Zero/current-CO baseline choice; qualified proposal retained from a successful managed run; unchanged-context and fresh CO checks before applying. Automatic search remains deferred. |
+| C13 Validation/recovery | Partial implementation | Owned-process cancellation, core/SMT affinity, failure gates, persistent original CO recovery and startup-apply interlock. Correctness adapters, WHEA attribution and automatic search remain planned. |
 | C14 Manual-OC reporting | Planned | Existing dedicated controls retained. |
 | C15 GPU CO | Conditional/planned | Firmware acceptance untested. |
 | C16 Profile expansion | Deferred per feature | Thermal action remains standalone; no new profile fields in this milestone. |
@@ -51,6 +51,17 @@ Validation record: Release build passed with zero warnings/errors; **414 app tes
 - Added one-action assisted trials: at least 20 valid busy samples over two seconds, similar reported clocks, two comparable peers in the same CCD, a 12.5 mV requested-VID gap, user lower bound, usable scalar evidence and unchanged fresh CO. One action sends at most one CO decrement and verifies it through the existing result path. It does not loop, launch a workload, select startup profiles or declare stability.
 - Added 40 driver-free cases covering native decoding, identity ambiguity, counter intervals, failed reads, affinity restoration, stale/unloaded data, bounded proposals, context comparisons, cancellation and capture/write races. Release build, **454 app tests**, **9 bot tests** and package success/failure checks passed. Synthetic native views were inspected at normal/doubled fonts; live readings and run comparisons use separate tabs to retain readable rows. PR [#22](https://github.com/AlexStapleton/SMUDebugTool/pull/22) carries the combined milestones and CI status; release publication has not started.
 - No live CPU access was used during development. Exact firmware VID behavior, physical binding on the user's machine, capture overhead and useful tuning outcomes remain hardware acceptance gates. See [native workbench contract](native-co-workbench.md).
+
+### Change log — 14 November 2026, managed workload milestone
+
+- Added a **Managed tests** tab: choose and remember a local Cinebench 2024.1.0 executable, map all-processor/core/SMT targets, select duration/timeout and run a baseline or candidate without switching applications to launch it.
+- Baselines explicitly choose verified all-core CO 0 or current offsets. Save original direct CO readback atomically before a reset or native assisted write. Preflight the whole physical batch; stop on failed verification and retain partial per-core results.
+- Added suspended owned-process creation, job assignment before execution, restricted handle inheritance and bounded output parsing. Stop, timeout, stale essential capture, reported errors and close terminate only the owned job tree. Existing benchmark processes are untouched.
+- Retain a qualified suggestion from busy native samples acquired inside a successful run. The user can apply one recorded -1 step after the workload exits, with matching context, fresh scalar/CO readback and the current lower bound. Failed/inconclusive runs discard proposals and pause assistance. No unattended search was added.
+- Persist original CO across restarts, block headless automatic apply while recovery is pending/unreadable, and provide explicit verified restore or keep-current/clear actions. Profiles are not automatically promoted. The recovery record is an interlock/original snapshot, not a full WHEA/crash-attribution journal.
+- Keep native rendering active during managed work. Serialize exports outside the acquisition lock and UI thread. Collapse setup during a test and retain scrollable larger-font layouts.
+- Added 25 driver-free cases: Release build passed with zero warnings/errors; **479 app tests**, **9 upstream-bot tests** and package success/failure checks passed. Coverage includes process descendants, cancellation, unrelated-process isolation, output quotas, version/score validation, zero reset, partial writes, changed context, startup exclusion and UI close. Synthetic setup/result views were inspected at normal/doubled fonts. PR [#22](https://github.com/AlexStapleton/SMUDebugTool/pull/22) records CI for the exact commit. No real benchmark or live hardware operation was executed.
+- Runtime acceptance of the user's Cinebench console output, actual CPU load/affinity, native VID agreement and overhead remains pending. Full protocol and user flow: [managed workload guide](managed-co-workloads.md).
 
 ## Product goal
 
@@ -117,7 +128,7 @@ For multiple firmware edits, validate the whole request before sending; record e
 
 ### Stage 3 — Ship the manual CO workbench first
 
-Build native session recording and comparison before automatic search. Support an independently launched Cinebench 2024 run, manual start/end markers and score entry. Capture per-core VID and clocks through the existing driver; there is no external CSV or shared-memory dependency. The first implementation supplies these pieces; package/thermal streams and repeated-run statistics follow later.
+Build native session recording and comparison before automatic search. Manual workload markers remain available, and managed Cinebench 2024.1.0 runs now coordinate process lifetime, native recording and parsed scores. Capture per-core VID and clocks through the existing driver; there is no external CSV or shared-memory dependency. Package/thermal streams and repeated-run statistics follow later.
 
 Expose one per-core table: physical core/CCD, current and candidate CO, readback outcome, active-sample VID if available, effective and reported clock, utilization/residency when available, test coverage and errors. Put measured rail voltage, package power and temperature in separate package/rail panels, not duplicated as alleged per-core physical voltages.
 
@@ -177,12 +188,12 @@ VID balancing can help generate a candidate in any mode; it cannot override a re
 
 ### Recommended user journey
 
-1. Open **Tools → Native CO workbench**, start monitoring and inspect native read evidence. The program validates physical/APIC/SMT identities and binds reads to those processors. Unsupported or ambiguous layouts stop capture rather than guessing a mapping. No external sensor selection or import is needed.
+1. Open **Tools → Native CO workbench**, start monitoring and inspect native read evidence. In **Managed tests**, choose Cinebench 2024.1.0 and read load targets. The program validates physical/APIC/SMT identities; reviewed one-group affinity exposes individual core/thread/SMT targets. No external sensor import is needed.
 2. Choose the goal and capture the current CO/CS/FMax/PBO context. Record BIOS/SMU version, power plan, workload version/settings, affinity and cooling context. An unreadable value is recorded as unknown, not silently assumed stock.
-3. Record an unchanged baseline. Warm up consistently, exclude startup/settling intervals, and repeat clean scored runs to estimate ordinary variation. Retain a separate idle/light-load segment.
-4. Inspect per-core/CCD summaries and let the workload settle. For assistance, set a personal CO lower bound and choose **Trial next eligible core (-1 CO)**. Only fresh, sufficiently busy, steady-clock windows with comparable same-CCD peers qualify. A higher-VID core is not defective.
+3. Choose **Baseline: set every core to CO 0** for a zero-CO reference, or explicitly keep current offsets. Run the baseline; original CO is preserved before reset and every reset must verify before launch. Use consistent warm-up and repeat runs to estimate ordinary variation.
+4. Inspect per-core/CCD summaries. The successful managed run can retain a qualified same-CCD native suggestion; choose **Apply recorded -1 CO trial** to use it after the workload exits. The live trial button remains for independently generated steady load. A higher-VID core is not defective.
 5. The action re-reads current CO, applies one negative step and verifies it through the existing result path. Keep other tuning dimensions fixed. A write during a scored recording marks that recording mixed; end it and collect a clean candidate run. A confirmed setting still has validation pending.
-6. Record a separate candidate run. Compare score, effective clocks, requested VID, measured rail voltage, package energy/power, temperatures and test results. Mark throttling, source gaps or a changing thermal context.
+6. Choose **Run candidate** with the same executable, target and duration. Compare native VID/effective clocks and parsed score. Rail, energy, temperatures, repeated-run statistics and richer coverage remain future integration; unavailable metrics are not claimed measured. Failure, timeout, missing/ambiguous score and changed context pause assistance.
 7. Validate beyond the all-core render: selected core single-thread tests, SMT-sibling/paired tests, heavier and lighter workloads, transitions, idle and the user's real applications. Where practical, use computational correctness tests with explicit pass/fail output. A Cinebench completion is performance evidence for that workload, not comprehensive error checking.
 8. Keep, discard or continue. Save a named experimental result with its test coverage. Only explicitly promote a chosen validated profile to startup. Interrupted/failed experiments cannot become the startup candidate automatically.
 
@@ -214,7 +225,7 @@ Benchmark capture overhead with capture off, normal capture and fast capture und
 
 ### External applications
 
-Support manual workload launch with native recording first. Later adapters can launch a user-selected local executable, capture exit/output and manage only the child they own. Never terminate unrelated benchmark instances. Store workload version and recipe; scores from different Cinebench releases are not directly comparable. Verify Cinebench 2024 automation against that release rather than assuming current Cinebench 2026 flags apply unchanged.
+Managed Cinebench 2024.1.0 now launches a selected local executable, records its version/hash/target/duration, captures bounded output and owns its job tree. No 2026-only SMT command is used; core/SMT restrictions use reviewed Windows affinity. Missing or unrecognized results are inconclusive. Actual 2024 console behavior remains a runtime acceptance gate. Never terminate unrelated benchmark instances or compare different versions/recipes as equivalent.
 
 HWiNFO is not an implementation dependency or a planned import requirement. A user may independently compare its display during hardware acceptance, but native capture and assisted writes must function without it. If the native source becomes unavailable, suspend dependent assistance and show the reason; never substitute cached values as new samples.
 
@@ -224,7 +235,7 @@ Journal the baseline, candidate, verified write outcomes, source context and pha
 
 Normal stop ends owned workloads and stops new writes promptly; it may offer or perform the session-authorized restore transaction when the driver remains responsive. Report partial restoration. After a system crash, next launch opens recovery without silently replaying or continuing the experiment. To make that effective, GUI and `--applyprofile` must share a persistent experiment interlock: a pending/interrupted trial blocks automatic experimental reapplication. If the current selected startup profile has not been independently validated, automated search must not arm until the user chooses a recovery/startup policy. An existing stable startup profile may remain eligible only when explicitly identified and not overwritten by experiments.
 
-Recovery records are machine/topology-bound and written atomically; corrupt/missing metadata fails closed for experiment resumption. Never automatically resume a search after a crash. The program cannot guarantee recovery from hardware hangs, firmware persistence or a configuration applied independently in BIOS.
+Implemented original-CO recovery records are machine/topology-bound and written atomically. Pending/unreadable records block automatic startup apply before CPU initialization; a file lease excludes concurrent automatic apply and experiment snapshot creation. Restore is explicit and retains the record on partial failure. Keep-current clears the interlock without saving a profile. Full phase journals, workload-error attribution and automatic-search recovery remain future work. The program cannot guarantee recovery from hardware hangs, firmware persistence or independently applied BIOS configuration.
 
 ## 5. Architecture and verification plan
 
@@ -234,7 +245,7 @@ Suggested new components:
 - Native provider/coordinator: implemented `NativeVidReader` and `NativeVidMonitor`; immutable source-tagged readings. Extend to package/thermal streams later.
 - `CoreIdentityMap`: physical SMU core, Windows group/logical processor, SMT siblings and external sensor identities, with validation status.
 - `ExperimentSession` / journal: baseline, configuration generations, trials, segments and recovery interlock.
-- `WorkloadAdapter`: manual markers first; versioned child-process adapters later.
+- `WorkloadRecipe` / `OwnedWorkloadProcess` / `ManagedCoRun`: managed Cinebench 2024.1.0 and manual markers delivered; correctness-test adapters remain future work.
 - `ComparisonAnalyzer`: valid-window filtering, repeated-run variation, score/energy comparison and explicit inconclusive outcomes.
 - `CoCandidatePlanner`: bounded proposals/search; independent from telemetry rendering and existing tuning transport.
 - `ValidationRecorder`: correctness-test output, Windows error evidence and coverage; no absolute stability certificate.

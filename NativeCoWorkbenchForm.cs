@@ -12,7 +12,7 @@ using System.Windows.Forms;
 
 namespace ZenStatesDebugTool
 {
-    public sealed class NativeCoWorkbenchForm : Form
+    public sealed partial class NativeCoWorkbenchForm : Form
     {
         private readonly NativeCoSession session;
         private readonly Func<Task<Func<CancellationToken, IReadOnlyList<CoreVidReading>>>> createSource;
@@ -27,8 +27,10 @@ namespace ZenStatesDebugTool
         private readonly Label status, cadence;
         private bool busy;
         private bool stopped;
+        private readonly CancellationTokenSource workbenchClosing = new CancellationTokenSource();
+        public CancellationToken ClosingToken => workbenchClosing.Token;
         public NativeCoWorkbenchForm(NativeCoSession session, Func<Task<Func<CancellationToken, IReadOnlyList<CoreVidReading>>>> createSource,
-            Func<Task<NativeCoContext>> captureContext, Func<CoStepProposal, Task<TuningResult>> applyStep)
+            Func<Task<NativeCoContext>> captureContext, Func<CoStepProposal, Task<TuningResult>> applyStep, ManagedCoServices managed = null)
         {
             this.session = session; this.createSource = createSource; this.captureContext = captureContext; this.applyStep = applyStep;
             Text = "Native CO workbench"; Size = new Size(1050, 780); UiLayout.Configure(this, new Size(720, 560));
@@ -74,7 +76,7 @@ namespace ZenStatesDebugTool
             runLayout.Controls.Add(report, 0, 2);
             var footer = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Top, WrapContents = true };
             save = Button("Save session report", async () => await SaveAsync());
-            reset = Button("New session (clear runs)", () => { session.Reset(); report.Clear(); RefreshRuns(); status.Text = "Started an empty session. Previous unsaved runs were cleared."; return Task.CompletedTask; });
+            reset = Button("New session (clear runs)", () => { session.Reset(); managedRun?.DiscardSuggestion(); report.Clear(); RefreshRuns(); status.Text = "Started an empty session. Previous unsaved runs were cleared."; return Task.CompletedTask; });
             var evidence = Button("Show native read evidence", () => {
                 tabs.SelectedTab = runsTab;
                 var rows = monitor?.Latest;
@@ -96,6 +98,7 @@ namespace ZenStatesDebugTool
             render.Tick += (s, e) => Render(); render.Start();
             FormClosed += (s, e) => StopCapture();
             Disposed += (s, e) => StopCapture();
+            InitializeManaged(tabs, managed);
             RefreshRuns(); SetBusy(false);
         }
         private static Button Button(string text, Func<Task> action)
@@ -106,6 +109,8 @@ namespace ZenStatesDebugTool
         private void StopCapture()
         {
             if (stopped) return; stopped = true;
+            workbenchClosing.Cancel();
+            managedCancellation?.Cancel();
             render.Stop(); render.Dispose(); monitor?.Dispose(); session.Interrupt();
         }
         private void SetBusy(bool value)
@@ -113,8 +118,9 @@ namespace ZenStatesDebugTool
             busy = value; startMonitor.Enabled = !value && monitor == null; interval.Enabled = monitor == null && !value;
             minimum.Enabled = !value; workload.Enabled = !value && !session.IsRecording;
             baseline.Enabled = candidate.Enabled = !value && monitor != null && !session.IsRecording;
-            end.Enabled = !value && session.IsRecording; step.Enabled = !value && monitor != null; save.Enabled = !value;
+            end.Enabled = !value && session.IsRecording; step.Enabled = !value && monitor != null && !ManagedAssistanceBlocked; save.Enabled = !value;
             reset.Enabled = !value && !session.IsRecording;
+            UpdateManagedButtons();
         }
         public async Task StartMonitorAsync()
         {
@@ -152,15 +158,19 @@ namespace ZenStatesDebugTool
         {
             if (busy || monitor == null || IsDisposed) return;
             SetBusy(true);
+            bool attempted = false;
             try {
+                if (ManagedAssistanceBlocked) throw new InvalidOperationException("Assisted writes paused. Complete a managed test or resolve CO recovery first.");
                 var context = await captureContext(); if (IsDisposed) return;
                 var latest = monitor.Latest;
                 if (monitor.Error != null || context.ExpectedCores <= 0 || context.ObservedCo.Count != context.ExpectedCores || latest.Count != context.ExpectedCores || latest.Any(r => r.Issue != null || !context.ObservedCo.ContainsKey(r.Slot))) throw new InvalidOperationException("Fresh, complete native readings and CO readback are required.");
                 var proposal = CoStepPlanner.Suggest(monitor.Window, context.ObservedCo, (int)minimum.Value, Stopwatch.GetTimestamp());
                 if (proposal == null) { status.Text = "No qualified trial: need steady busy samples and comparable peers in the same CCD. No commands sent."; return; }
+                attempted = true;
                 var result = await applyStep(proposal); monitor.Clear();
+                if (result.Rows.Count != 1 || result.Rows[0].Outcome != TuningOutcome.Verified) managedRun?.BlockAssistance();
                 if (!IsDisposed) status.Text = TuningResultFormatter.FriendlySummary(result) + ". Core " + proposal.Slot + ": " + proposal.Previous + " → " + proposal.Requested + " CO. Run a separate candidate test to assess the change.";
-            } catch (Exception ex) { monitor?.Clear(); if (!IsDisposed) status.Text = ex.Message; }
+            } catch (Exception ex) { if (attempted) managedRun?.BlockAssistance(); monitor?.Clear(); if (!IsDisposed) status.Text = ex.Message; }
             finally { if (!IsDisposed) SetBusy(false); }
         }
         public void NoteChange(TuningResult result)
@@ -169,6 +179,7 @@ namespace ZenStatesDebugTool
         }
         public void NoteHardwareWrite()
         {
+            managedRun?.DiscardSuggestion();
             session.NoteChange(DateTimeOffset.UtcNow.ToString("O") + " App hardware-write operation requested."); monitor?.Clear();
         }
         public void InvalidateCapture() => monitor?.Clear();
@@ -186,7 +197,7 @@ namespace ZenStatesDebugTool
         }
         private void Render()
         {
-            if (busy || monitor == null || IsDisposed) return;
+            if (busy && managedCancellation == null || monitor == null || IsDisposed) return;
             long now = Stopwatch.GetTimestamp();
             cadence.Text = $"Requested {interval.Value} ms; successful batch interval {monitor.LastCadenceMs:0.0} ms; read pass {monitor.LastDurationMs:0.0} ms. UI: 200 ms.";
             cores.DataSource = monitor.Latest.Select(r => new {
@@ -204,8 +215,9 @@ namespace ZenStatesDebugTool
                 if (dialog.ShowDialog(this) != DialogResult.OK) return;
                 SetBusy(true);
                 try {
-                    string path = dialog.FileName, json = session.Export();
+                    string path = dialog.FileName;
                     await Task.Run(() => {
+                        string json = session.Export();
                         if (Encoding.UTF8.GetByteCount(json) > 8 * 1024 * 1024) throw new InvalidOperationException("Session report exceeds 8 MiB.");
                         string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
                         try { File.WriteAllText(temporary, json, new UTF8Encoding(false)); if (File.Exists(path)) File.Replace(temporary, path, null); else File.Move(temporary, path); }

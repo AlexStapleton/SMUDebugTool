@@ -622,4 +622,19 @@
   <data name="Native readings" xml:space="preserve"><value>原生读数</value></data>
   <data name="Runs and comparison" xml:space="preserve"><value>测试和比较</value></data>
   <data name="VIDVolts" xml:space="preserve"><value>VID (V)</value></data>
+  <data name="Apply recorded -1 CO trial" xml:space="preserve"><value>应用记录的 -1 CO 试调</value></data>
+  <data name="Baseline: keep current CO" xml:space="preserve"><value>基准：保留当前 CO</value></data>
+  <data name="Baseline: set every core to CO 0" xml:space="preserve"><value>基准：所有核心 CO 设为 0</value></data>
+  <data name="Choose Cinebench…" xml:space="preserve"><value>选择 Cinebench…</value></data>
+  <data name="Hide test setup" xml:space="preserve"><value>隐藏测试设置</value></data>
+  <data name="Keep current CO / clear recovery" xml:space="preserve"><value>保留当前 CO / 清除恢复记录</value></data>
+  <data name="Managed tests" xml:space="preserve"><value>托管测试</value></data>
+  <data name="Minimum test seconds" xml:space="preserve"><value>最短测试秒数</value></data>
+  <data name="Read load targets" xml:space="preserve"><value>读取负载目标</value></data>
+  <data name="Restore original CO" xml:space="preserve"><value>恢复原始 CO</value></data>
+  <data name="Run baseline" xml:space="preserve"><value>运行基准测试</value></data>
+  <data name="Run candidate" xml:space="preserve"><value>运行候选测试</value></data>
+  <data name="Show test setup" xml:space="preserve"><value>显示测试设置</value></data>
+  <data name="Stop owned test" xml:space="preserve"><value>停止本程序启动的测试</value></data>
+  <data name="Timeout seconds" xml:space="preserve"><value>超时秒数</value></data>
 </root>

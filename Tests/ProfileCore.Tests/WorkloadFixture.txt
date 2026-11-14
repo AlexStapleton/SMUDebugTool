@@ -1,0 +1,26 @@
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Reflection;
+using System.Threading;
+[assembly: AssemblyProduct("Cinebench")]
+[assembly: AssemblyFileVersion("2024.1.0.0")]
+public static class WorkloadFixture {
+ public static int Main(string[] args) {
+  string mode = args.Length == 0 ? "score" : args[0];
+  if (mode == "leaf") { File.WriteAllText(args[1], Process.GetCurrentProcess().Id.ToString()); Thread.Sleep(Timeout.Infinite); }
+  if (mode == "child" || mode == "root-exit") {
+   var p = Process.Start(new ProcessStartInfo(Process.GetCurrentProcess().MainModule.FileName, "leaf \"" + args[1] + "\"") { UseShellExecute = false, CreateNoWindow = true });
+   File.WriteAllText(args[2], p.Id.ToString());
+   if (mode == "child") Thread.Sleep(Timeout.Infinite);
+  }
+  if (mode == "wait") { File.WriteAllText(args[1], Process.GetCurrentProcess().Id.ToString()); Thread.Sleep(Timeout.Infinite); }
+  if (mode == "exit") return 7;
+  if (mode == "no-score") { Console.WriteLine("No recognized result"); return 0; }
+  if (mode == "error") { Console.Error.WriteLine("FATAL ERROR: fixture failed"); return 0; }
+  if (mode == "flood") { for (int i=0;i<1000;i++) Console.Write(new string('x',10000)); return 0; }
+  if (mode == "quote") Console.WriteLine("ARG=" + args[1]);
+  Console.WriteLine("AFFINITY=" + Process.GetCurrentProcess().ProcessorAffinity.ToInt64().ToString("X"));
+  Console.WriteLine("CB 1250.50 (CPU)"); return 0;
+ }
+}

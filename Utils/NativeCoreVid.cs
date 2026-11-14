@@ -12,7 +12,9 @@ namespace ZenStatesDebugTool
         public CoreTarget Core { get; }
         public ProcessorTarget Processor { get; }
         public uint ApicId { get; }
-        public NativeCoreBinding(CoreTarget core, ProcessorTarget processor, uint apicId) { Core = core; Processor = processor; ApicId = apicId; }
+        public IReadOnlyList<ProcessorTarget> Siblings { get; }
+        public NativeCoreBinding(CoreTarget core, ProcessorTarget processor, uint apicId, IEnumerable<ProcessorTarget> siblings = null)
+        { Core = core; Processor = processor; ApicId = apicId; Siblings = Array.AsReadOnly((siblings ?? new[] { processor }).ToArray()); }
     }
     public sealed class NativeThreadIdentity
     {
@@ -40,7 +42,7 @@ namespace ZenStatesDebugTool
             if (groups.Count != topology.Targets.Count || groups.Any(g => g.Count() != smt || g.Select(t => t.ApicId % smt).Distinct().Count() != smt))
                 throw new InvalidOperationException("SMT siblings or physical cores are missing; native tuning is unavailable.");
             return Array.AsReadOnly(groups.OrderBy(g => g.Key).Select(g => {
-                var first = g.OrderBy(t => t.ApicId).First(); return new NativeCoreBinding(topology.Find((int)g.Key), first.Processor, first.ApicId);
+                var first = g.OrderBy(t => t.ApicId).First(); return new NativeCoreBinding(topology.Find((int)g.Key), first.Processor, first.ApicId, g.OrderBy(t => t.ApicId).Select(t => t.Processor));
             }).ToArray());
         }
     }
@@ -82,6 +84,7 @@ namespace ZenStatesDebugTool
     public sealed class NativeVidReader
     {
         private readonly IReadOnlyList<NativeCoreBinding> bindings;
+        public IReadOnlyList<NativeCoreBinding> Bindings => bindings;
         private readonly IProcessorAffinity affinity;
         private readonly Func<uint, ulong?> read;
         private readonly uint family;

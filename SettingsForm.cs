@@ -134,8 +134,9 @@ namespace ZenStatesDebugTool
             finally { hardwareOperation = false; if (!shuttingDown && !IsDisposed) tabControl1.Enabled = wasEnabled; }
         }
 
-        private async Task<T> RunHardwareWriteAsync<T>(Func<T> action)
+        private async Task<T> RunHardwareWriteAsync<T>(Func<T> action, bool managedAllowed = false)
         {
+            if (nativeManagedOperation && !managedAllowed) throw new InvalidOperationException("A managed workload owns tuning. Stop it before changing hardware settings.");
             nativeWorkbench?.NoteHardwareWrite();
             try { return await RunHardwareAsync(action); }
             finally { nativeWorkbench?.InvalidateCapture(); }
