@@ -1,5 +1,18 @@
 ZenStatesDebugTool
 
+### Roadmap progress
+
+The [capability and Curve Optimizer roadmap](docs/capability-and-CO-roadmap.md)
+is the living tracker for implemented changes, validation and remaining hardware gates.
+The implementation adds **Tools → CPU overview and capabilities**, on-demand
+readings, scalar verification and a separate temperature-ceiling action. **Tools →
+Native CO workbench** captures per-core VID and clocks through the existing driver,
+records baseline/candidate runs and offers explicit, verified one-step CO trials.
+Its **Managed tests** tab launches a selected Cinebench 2024.1.0 installation,
+supports a verified zero-CO baseline, parses scores and owns cancellation/recovery.
+There is no HWiNFO or CSV dependency. See the [workbench guide](docs/native-co-workbench.md) and
+[v1.51.0 notes](docs/release-notes-1.51.0.md) for its scope and limitations.
+
 ### Build and package this fork
 
 Windows x64, .NET Framework 4.8 and the .NET SDK specified in `global.json` are required.

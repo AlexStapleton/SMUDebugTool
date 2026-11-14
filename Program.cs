@@ -72,8 +72,10 @@ namespace ZenStatesDebugTool
 
             Cpu cpu = null;
             DriverSession session = null;
+            IDisposable automaticApply = null;
             try
             {
+                automaticApply = new CoRecoveryStore(CoRecoveryStore.DefaultPath).AcquireAutomaticApply();
                 var manager = new ProfileManager(profilesPath);
                 var profile = manager.Load(profileName);
                 if (profile == null)
@@ -96,6 +98,7 @@ namespace ZenStatesDebugTool
             {
                 try { cpu?.Dispose(); session?.Dispose(); }
                 catch (Exception ex) { Log(logPath, "Driver disposal failed: " + ex.Message); }
+                finally { automaticApply?.Dispose(); }
             }
         }
 

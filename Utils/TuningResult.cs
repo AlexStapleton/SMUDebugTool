@@ -5,7 +5,7 @@ using System.Linq;
 
 namespace ZenStatesDebugTool
 {
-    public enum TuningKind { CurveOptimizer, Fmax, CurveShaper, Ppt, Tdc, Edc, Scalar }
+    public enum TuningKind { CurveOptimizer, Fmax, CurveShaper, Ppt, Tdc, Edc, Scalar, Temperature }
     public enum TuningOutcome { Verified, AcceptedUnverified, Mismatch, Rejected, Skipped, Invalid, NotAttempted, Error }
 
     public sealed class TuningRequest
@@ -17,7 +17,7 @@ namespace ZenStatesDebugTool
         public int High { get; set; }
         public string Setting => Kind + (Kind == TuningKind.CurveOptimizer ? " core " + Index : Kind == TuningKind.CurveShaper ? " tier " + Index : "");
         public string Requested => Kind == TuningKind.CurveShaper ? $"{Value}/{Medium}/{High} low/medium/high" : Value.ToString(CultureInfo.InvariantCulture);
-        public string Unit => Kind == TuningKind.Fmax ? "MHz" : Kind == TuningKind.Ppt ? "W" : Kind == TuningKind.Tdc || Kind == TuningKind.Edc ? "A" : Kind == TuningKind.Scalar ? "x" : "steps";
+        public string Unit => Kind == TuningKind.Temperature ? "°C" : Kind == TuningKind.Fmax ? "MHz" : Kind == TuningKind.Ppt ? "W" : Kind == TuningKind.Tdc || Kind == TuningKind.Edc ? "A" : Kind == TuningKind.Scalar ? "x" : "steps";
     }
 
     public sealed class TuningReply
@@ -82,7 +82,7 @@ namespace ZenStatesDebugTool
         }
         public static string FriendlyOutcome(TuningRow row)
         {
-            if (row.Request.Kind == TuningKind.CurveShaper && row.Outcome == TuningOutcome.AcceptedUnverified)
+            if ((row.Request.Kind == TuningKind.CurveShaper || row.Request.Kind == TuningKind.Scalar) && row.Outcome == TuningOutcome.AcceptedUnverified)
                 return UiText.T(row.Read?.ReadIssue != null ? "Accepted; readback inconclusive" : row.Read != null && row.Read.Status != 1
                     ? "Accepted; readback failed" : "Accepted; not verified");
             return FriendlyOutcome(row.Outcome);
@@ -97,6 +97,7 @@ namespace ZenStatesDebugTool
                 case TuningKind.Tdc: return "TDC";
                 case TuningKind.Edc: return "EDC";
                 case TuningKind.Scalar: return UiText.T("PBO Scalar");
+                case TuningKind.Temperature: return UiText.T("Temperature ceiling");
                 default: return "FMax";
             }
         }

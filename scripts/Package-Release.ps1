@@ -3,7 +3,7 @@ param(
     [Parameter(Mandatory)][string]$OutputDirectory,
     [string]$Version,
     [string]$SourceCommit,
-    [string]$ReleaseNotes = (Join-Path $PSScriptRoot '..\docs\release-notes-1.50.1.md'),
+    [string]$ReleaseNotes = (Join-Path $PSScriptRoot '..\docs\release-notes-1.51.0.md'),
     [switch]$RequireClean
 )
 $ErrorActionPreference = 'Stop'

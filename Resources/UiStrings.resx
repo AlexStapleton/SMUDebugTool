@@ -589,4 +589,52 @@
   <data name="not verified" xml:space="preserve">
     <value>not verified</value>
   </data>
+  <data name="CPU overview and capabilities" xml:space="preserve"><value>CPU overview and capabilities</value></data>
+  <data name="Readings" xml:space="preserve"><value>Readings</value></data>
+  <data name="Command map" xml:space="preserve"><value>Command map</value></data>
+  <data name="Refresh snapshot" xml:space="preserve"><value>Refresh snapshot</value></data>
+  <data name="Apply ceiling" xml:space="preserve"><value>Apply ceiling</value></data>
+  <data name="Temperature ceiling" xml:space="preserve"><value>Temperature ceiling</value></data>
+  <data name="Requested temperature ceiling (°C)" xml:space="preserve"><value>Requested temperature ceiling (°C)</value></data>
+  <data name="No snapshot captured." xml:space="preserve"><value>No snapshot captured.</value></data>
+  <data name="Reading snapshot…" xml:space="preserve"><value>Reading snapshot…</value></data>
+  <data name="Applying temperature ceiling…" xml:space="preserve"><value>Applying temperature ceiling…</value></data>
+  <data name="Evidence" xml:space="preserve"><value>Evidence</value></data>
+  <data name="AgeMs" xml:space="preserve"><value>Age (ms)</value></data>
+  <data name="Context" xml:space="preserve"><value>Context</value></data>
+  <data name="EffectiveMHz" xml:space="preserve"><value>Effective clock (MHz)</value></data>
+  <data name="End run" xml:space="preserve"><value>End run</value></data>
+  <data name="Native CO workbench" xml:space="preserve"><value>Native CO workbench</value></data>
+  <data name="New session (clear runs)" xml:space="preserve"><value>New session (clear runs)</value></data>
+  <data name="ReportedMHz" xml:space="preserve"><value>Reported clock (MHz)</value></data>
+  <data name="Requested interval (ms)" xml:space="preserve"><value>Requested interval (ms)</value></data>
+  <data name="Role" xml:space="preserve"><value>Role</value></data>
+  <data name="Save session report" xml:space="preserve"><value>Save session report</value></data>
+  <data name="Score" xml:space="preserve"><value>Score</value></data>
+  <data name="Score (0 = unset)" xml:space="preserve"><value>Score (0 = unset)</value></data>
+  <data name="Show native read evidence" xml:space="preserve"><value>Show native read evidence</value></data>
+  <data name="Start baseline" xml:space="preserve"><value>Start baseline</value></data>
+  <data name="Start candidate" xml:space="preserve"><value>Start candidate</value></data>
+  <data name="Start monitoring" xml:space="preserve"><value>Start monitoring</value></data>
+  <data name="State" xml:space="preserve"><value>State</value></data>
+  <data name="Trial next eligible core (-1 CO)" xml:space="preserve"><value>Trial next eligible core (-1 CO)</value></data>
+  <data name="User CO lower bound" xml:space="preserve"><value>User CO lower bound</value></data>
+  <data name="Native readings" xml:space="preserve"><value>Native readings</value></data>
+  <data name="Runs and comparison" xml:space="preserve"><value>Runs and comparison</value></data>
+  <data name="VIDVolts" xml:space="preserve"><value>VID (V)</value></data>
+  <data name="Apply recorded -1 CO trial" xml:space="preserve"><value>Apply recorded -1 CO trial</value></data>
+  <data name="Baseline: keep current CO" xml:space="preserve"><value>Baseline: keep current CO</value></data>
+  <data name="Baseline: set every core to CO 0" xml:space="preserve"><value>Baseline: set every core to CO 0</value></data>
+  <data name="Choose Cinebench…" xml:space="preserve"><value>Choose Cinebench…</value></data>
+  <data name="Hide test setup" xml:space="preserve"><value>Hide test setup</value></data>
+  <data name="Keep current CO / clear recovery" xml:space="preserve"><value>Keep current CO / clear recovery</value></data>
+  <data name="Managed tests" xml:space="preserve"><value>Managed tests</value></data>
+  <data name="Minimum test seconds" xml:space="preserve"><value>Minimum test seconds</value></data>
+  <data name="Read load targets" xml:space="preserve"><value>Read load targets</value></data>
+  <data name="Restore original CO" xml:space="preserve"><value>Restore original CO</value></data>
+  <data name="Run baseline" xml:space="preserve"><value>Run baseline</value></data>
+  <data name="Run candidate" xml:space="preserve"><value>Run candidate</value></data>
+  <data name="Show test setup" xml:space="preserve"><value>Show test setup</value></data>
+  <data name="Stop owned test" xml:space="preserve"><value>Stop owned test</value></data>
+  <data name="Timeout seconds" xml:space="preserve"><value>Timeout seconds</value></data>
 </root>

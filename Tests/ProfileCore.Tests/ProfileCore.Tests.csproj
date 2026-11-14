@@ -6,6 +6,16 @@
     <RootNamespace>ProfileCore.Tests</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="..\..\Utils\CpuOverview.cs" />
+    <Compile Include="..\..\Utils\NativeCoreVid.cs" />
+    <Compile Include="..\..\Utils\NativeCoSession.cs" />
+    <Compile Include="..\..\Utils\ManagedWorkload.cs" />
+    <Compile Include="..\..\Utils\OwnedWorkloadProcess.cs" />
+    <Compile Include="..\..\Utils\CoRecoveryStore.cs" />
+    <Compile Include="..\..\Utils\ManagedCoRun.cs" />
+    <Compile Include="..\..\NativeCoWorkbenchForm.cs" />
+    <Compile Include="..\..\NativeCoWorkbenchForm.Managed.cs" />
+    <Compile Include="..\..\CpuOverviewForm.cs" />
     <Compile Include="..\..\TuningPreviewForm.cs" />
     <Compile Include="..\..\TuningHistoryForm.cs" />
     <Compile Include="..\..\Utils\AcpiCommandHelp.cs" />
@@ -27,6 +37,8 @@
     <Compile Include="..\..\Utils\TopologySnapshot.cs" />
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Drawing" />
+    <Reference Include="Microsoft.CSharp" />
+    <None Update="WorkloadFixture.txt" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="..\..\ApplyResultsForm.cs" Link="ApplyResultsForm.cs" />
     <Compile Include="..\..\TuningResultsPanel.cs" Link="TuningResultsPanel.cs" />
     <Compile Include="..\..\Utils\HardwareOperationRunner.cs" Link="HardwareOperationRunner.cs" />
