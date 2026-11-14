@@ -58,9 +58,9 @@ namespace ZenStatesDebugTool
                             reply.ReadIssue = "Curve Shaper getter returned a margin outside the supported packet range."; return reply;
                         }
                     }
-                    bool nonzero = payload.Take(5).Any(word => word != 0);
+                    bool nonzero = payload.Take(5).Any(word => (word & 0xFFFFFF00U) != 0);
                     if (!nonzero && !curveShaperGetterResponded) {
-                        reply.ReadIssue = "Curve Shaper getter returned an all-zero block; the response is inconclusive."; return reply;
+                        reply.ReadIssue = "Curve Shaper getter returned an all-zero margin block; the response is inconclusive."; return reply;
                     }
                     if (nonzero) curveShaperGetterResponded = true;
                     CurveShaperCodec.Unpack(payload[r.Index], out int observedLow, out int observedMedium, out int observedHigh);

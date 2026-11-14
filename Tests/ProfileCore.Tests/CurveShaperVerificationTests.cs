@@ -127,6 +127,13 @@ namespace ProfileCore.Tests
             Assert.Equal(TuningOutcome.AcceptedUnverified, row.Outcome); Assert.Contains("all-zero", row.Read.ReadIssue);
         }
         [Fact]
+        public void LowByteMetadataAloneDoesNotProveOffsetReadback()
+        {
+            var firmware = new Firmware { ReturnWords = words => new uint[] { 1, 2, 3, 4, 5, 0 } };
+            var row = Assert.Single(new TuningService(firmware).Apply(new[] { Cs(0, 0, 0, 0) }).Rows);
+            Assert.Equal(TuningOutcome.AcceptedUnverified, row.Outcome); Assert.Contains("all-zero margin", row.Read.ReadIssue);
+        }
+        [Fact]
         public void FreshAllZeroResetCanConfirmAfterGetterRespondedDuringSameApply()
         {
             var firmware = new Firmware();

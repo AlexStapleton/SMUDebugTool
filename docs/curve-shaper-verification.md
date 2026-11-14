@@ -14,11 +14,12 @@ short packet, out-of-contract band or incomplete/derived observation cannot veri
 Fatal I/O failures and cancellation stop the batch without retries or rollback.
 
 All-zero blocks are a known ambiguous response on this interface. Until this
-getter has returned a valid nonzero tier block during the same apply, an all-zero
+getter has returned a valid block with nonzero margin bytes during the same apply, an all-zero
 block remains inconclusive, including for a requested zero tier. After that evidence,
 fresh zero words can confirm a reset. This capability evidence is local to the
 transport instance; cached requested/display values are never used as readback.
-The program does not introduce probe writes to establish support.
+Unused low bytes and the sixth word do not establish that evidence. The program
+does not introduce probe writes to establish support.
 
 Keep observed low/medium/high values and raw returned words in result snapshots,
 read-only Details and reports. Write/read statuses remain separate. On a mismatch,
