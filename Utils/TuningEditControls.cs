@@ -30,6 +30,16 @@ namespace ZenStatesDebugTool
         private bool changing;
         public TuningEditSession Session { get; } = new TuningEditSession();
         public event Action Changed;
+        public void RegisterCores(IReadOnlyDictionary<int, NumericUpDown> controls, IEnumerable<int> validatedSlots)
+        {
+            // CO spinners start disabled while their initial reads run. Availability comes
+            // from validated physical topology, rather than that temporary UI state.
+            foreach (int slot in validatedSlots)
+                if (controls.TryGetValue(slot, out var control)) {
+                    control.Enabled = true;
+                    Register(TuningKind.CurveOptimizer, slot, control);
+                }
+        }
         public void Register(TuningKind kind, int index, params NumericUpDown[] controls)
         {
             if (controls.Length != (kind == TuningKind.CurveShaper ? 3 : 1)) throw new ArgumentException("Unexpected editor field count.");

@@ -8,6 +8,9 @@ retain their dedicated workflows.
 - Capture an editor baseline before asynchronous initialization. Highlight changes to
   it and show saved values, last CPU observations and last accepted requests separately.
   Initial defaults and session fallback values never become claimed CPU measurements.
+  Register CO editors from validated physical targets even though their initial
+  spinners start disabled. Draft editing may begin before readback; applies remain
+  gated until hardware initialization completes.
 - CPU refresh updates observations and the discard baseline without overwriting a
   pending draft. Only in-range observations may populate controls. Direct result
   readbacks retain their source/time; unavailable readback remains unavailable.

@@ -13,9 +13,8 @@ namespace ZenStatesDebugTool
         private void InitTuningEdits()
         {
             editControls = new TuningEditControls();
-            foreach (var item in coControls.Where(kv => IsCoreEnabled(kv.Key) && kv.Value.Enabled &&
-                (cpu.smu.Rsmu.SMU_MSG_SetDldoPsmMargin != 0 || cpu.smu.Mp1Smu.SMU_MSG_SetDldoPsmMargin != 0)))
-                editControls.Register(TuningKind.CurveOptimizer, item.Key, item.Value);
+            if (cpu.smu.Rsmu.SMU_MSG_SetDldoPsmMargin != 0 || cpu.smu.Mp1Smu.SMU_MSG_SetDldoPsmMargin != 0)
+                editControls.RegisterCores(coControls, hardware.Topology.Targets.Select(t => t.Slot));
             if (_fmaxSupported) editControls.Register(TuningKind.Fmax, 0, numericUpDownFmax);
             if (_curveShaperSupported)
                 for (int tier = 0; tier < 5; tier++) editControls.Register(TuningKind.CurveShaper, tier, CsGrid[tier]);

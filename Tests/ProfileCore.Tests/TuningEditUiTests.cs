@@ -24,6 +24,23 @@ namespace ProfileCore.Tests
             Assert.Same(done.Task, await Task.WhenAny(done.Task, Task.Delay(15000))); await done.Task;
         }
         [Fact]
+        public Task InitiallyDisabledCoreEditorsAreRegisteredByPhysicalTargetBeforeReadback() => OnSta(() => {
+            using (var first = new NumericUpDown { Minimum = -999, Maximum = 999, Enabled = false })
+            using (var second = new NumericUpDown { Minimum = -999, Maximum = 999, Enabled = false })
+            using (var absent = new NumericUpDown { Minimum = -999, Maximum = 999, Enabled = false })
+            using (var edits = new TuningEditControls()) {
+                var controls = new System.Collections.Generic.Dictionary<int, NumericUpDown> { [0] = first, [8] = second, [1] = absent };
+                edits.RegisterCores(controls, new[] { 0, 8 });
+                Assert.True(first.Enabled); Assert.True(second.Enabled); Assert.False(absent.Enabled);
+                Assert.Equal(new[] { 0, 8 }, edits.Capture().CoMargins.Keys.OrderBy(k => k));
+                first.Value = -25;
+                edits.Observe(new TuningRequest { Kind = TuningKind.CurveOptimizer, Index = 0, Value = -20 }, "CPU readback");
+                Assert.Equal(-25, first.Value);
+                Assert.Equal(-25, Assert.Single(edits.Session.Changes(edits.Capture()).CoMargins).Value);
+                edits.Discard(); Assert.Equal(-20, first.Value); Assert.True(first.Enabled); Assert.False(absent.Enabled);
+            }
+        });
+        [Fact]
         public Task RefreshPreservesPendingDraftAndDiscardIsALocalReset() => OnSta(() => {
             using (var form = new Form { Opacity = 0 })
             using (var control = new NumericUpDown { Minimum = -999, Maximum = 999 })
