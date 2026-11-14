@@ -415,4 +415,91 @@
     <value>Tier</value>
   </data>
   <data name="sent without readback" xml:space="preserve"><value>sent without readback</value></data>
+  <data name="{0} pending settings. Yellow fields are local edits." xml:space="preserve">
+    <value>Pending settings: {0}. Yellow fields are local edits.</value>
+  </data>
+  <data name="Action" xml:space="preserve">
+    <value>Action</value>
+  </data>
+  <data name="Apply cancelled; no commands sent." xml:space="preserve">
+    <value>Apply cancelled; no commands sent.</value>
+  </data>
+  <data name="Apply changes" xml:space="preserve">
+    <value>Apply changes</value>
+  </data>
+  <data name="Apply preview" xml:space="preserve">
+    <value>Apply preview</value>
+  </data>
+  <data name="Apply selected settings" xml:space="preserve">
+    <value>Apply selected settings</value>
+  </data>
+  <data name="Apply these settings" xml:space="preserve">
+    <value>Apply these settings</value>
+  </data>
+  <data name="Baseline" xml:space="preserve">
+    <value>Baseline</value>
+  </data>
+  <data name="Cancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="CPU readback" xml:space="preserve">
+    <value>CPU readback</value>
+  </data>
+  <data name="CPU report; unverified" xml:space="preserve">
+    <value>CPU report; unverified</value>
+  </data>
+  <data name="CPU reported" xml:space="preserve">
+    <value>CPU reported</value>
+  </data>
+  <data name="CpuReported" xml:space="preserve">
+    <value>CPU reported</value>
+  </data>
+  <data name="Discard edits" xml:space="preserve">
+    <value>Discard edits</value>
+  </data>
+  <data name="Edited locally" xml:space="preserve">
+    <value>Edited locally</value>
+  </data>
+  <data name="Edits discarded locally; no commands sent." xml:space="preserve">
+    <value>Edits discarded locally; no commands sent.</value>
+  </data>
+  <data name="Initial editor value; not a CPU read" xml:space="preserve">
+    <value>Initial editor value; not a CPU read</value>
+  </data>
+  <data name="Last sent; unverified" xml:space="preserve">
+    <value>Last sent; unverified</value>
+  </data>
+  <data name="Leave unchanged (0)" xml:space="preserve">
+    <value>Leave unchanged (0)</value>
+  </data>
+  <data name="No pending changes to apply." xml:space="preserve">
+    <value>No pending changes to apply.</value>
+  </data>
+  <data name="Previous" xml:space="preserve">
+    <value>Editor baseline</value>
+  </data>
+  <data name="Review the requested settings. CPU reports are last known observations, not live measurements. Cancel sends no commands." xml:space="preserve">
+    <value>Review the requested settings. CPU reports are last known observations, not live measurements. Cancel sends no commands.</value>
+  </data>
+  <data name="Saved" xml:space="preserve">
+    <value>Saved value</value>
+  </data>
+  <data name="Saved value" xml:space="preserve">
+    <value>Saved value</value>
+  </data>
+  <data name="Send request" xml:space="preserve">
+    <value>Send request</value>
+  </data>
+  <data name="Session value; unverified" xml:space="preserve">
+    <value>Session value; unverified</value>
+  </data>
+  <data name="Source" xml:space="preserve">
+    <value>Source</value>
+  </data>
+  <data name="Unavailable" xml:space="preserve">
+    <value>Unavailable</value>
+  </data>
+  <data name="Unknown" xml:space="preserve">
+    <value>Unknown</value>
+  </data>
 </root>

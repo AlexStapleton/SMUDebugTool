@@ -49,6 +49,10 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="TuningPreviewForm.cs" />
+    <Compile Include="SettingsForm.TuningEdits.cs" />
+    <Compile Include="Utils\TuningEditControls.cs" />
+    <Compile Include="Utils\TuningEditSession.cs" />
     <Compile Include="Utils\PStateVidControls.cs" />
     <Compile Include="ProfileTargetsForm.cs" />
     <Compile Include="Profiles\ProfileTargetReview.cs" />

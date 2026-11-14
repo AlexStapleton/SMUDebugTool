@@ -6,6 +6,9 @@
     <RootNamespace>ProfileCore.Tests</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="..\..\TuningPreviewForm.cs" />
+    <Compile Include="..\..\Utils\TuningEditControls.cs" />
+    <Compile Include="..\..\Utils\TuningEditSession.cs" />
     <Compile Include="..\..\Utils\PStateVidControls.cs" />
     <Compile Include="..\..\Profiles\ProfileTargetReview.cs" />
     <EmbeddedResource Include="..\..\Resources\UiStrings.resx"><LogicalName>ZenStatesDebugTool.Resources.UiStrings.resources</LogicalName></EmbeddedResource>

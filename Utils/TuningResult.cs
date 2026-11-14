@@ -47,7 +47,7 @@ namespace ZenStatesDebugTool
     public sealed class TuningResult
     {
         public string Label { get; set; } = "Current settings";
-        public DateTime StartedUtc { get; } = DateTime.UtcNow;
+        public DateTime StartedUtc { get; internal set; } = DateTime.UtcNow;
         public string ApplicationVersion => typeof(TuningResult).Assembly.GetName().Version.ToString();
         public List<TuningRow> Rows { get; } = new List<TuningRow>();
         public bool Complete => Rows.All(r => r.Outcome != TuningOutcome.NotAttempted);

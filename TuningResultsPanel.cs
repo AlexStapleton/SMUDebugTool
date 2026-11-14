@@ -11,6 +11,9 @@ namespace ZenStatesDebugTool
         private readonly Label summary;
         private readonly DataGridView overview;
         private readonly Button details;
+        private readonly ComboBox recent;
+        private readonly TuningActionHistory history = new TuningActionHistory();
+        public int HistoryCount => history.Entries.Count;
         public TuningResult Result { get; private set; }
         public TuningResultsPanel(TextBox log)
         {
@@ -32,12 +35,35 @@ namespace ZenStatesDebugTool
             bar.Controls.Add(activity);
             bar.Controls.Add(details);
             overview = CreateGrid(false);
+            recent = new ComboBox { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList,
+                AccessibleName = "Recent actions (this session)", DropDownWidth = 900, Visible = false };
+            recent.SelectedIndexChanged += (s, e) => { if (recent.SelectedItem is TuningHistoryEntry entry) DisplayResult(entry.Result); };
             log.Visible = false; // Keep the bounded diagnostic history without displaying it in the normal workflow.
             Controls.Add(log);
             Controls.Add(overview);
+            Controls.Add(recent);
             Controls.Add(bar);
         }
         public void ShowResult(TuningResult result)
+        {
+            history.Add(result);
+            PopulateHistory(0);
+        }
+        public void RefreshLanguage()
+        {
+            if (history.Entries.Count > 0) PopulateHistory(Math.Max(0, recent.SelectedIndex));
+            else UiText.Apply(this);
+        }
+        private void PopulateHistory(int selected)
+        {
+            recent.BeginUpdate();
+            try {
+                recent.Items.Clear();
+                foreach (var entry in history.Entries) recent.Items.Add(entry);
+                recent.Visible = true; recent.SelectedIndex = selected;
+            } finally { recent.EndUpdate(); }
+        }
+        private void DisplayResult(TuningResult result)
         {
             Result = result;
             summary.Text = TuningResultFormatter.FriendlySummary(result);

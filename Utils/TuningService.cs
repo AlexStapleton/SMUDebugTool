@@ -35,7 +35,6 @@ namespace ZenStatesDebugTool
 
         public TuningResult Apply(Profile profile, CancellationToken cancellation = default(CancellationToken))
         {
-            var requests = new List<TuningRequest>();
             if (profile == null)
             {
                 var invalid = new TuningResult();
@@ -49,6 +48,16 @@ namespace ZenStatesDebugTool
                 invalid.Rows.Add(new TuningRow { Request = new TuningRequest(), Outcome = TuningOutcome.Invalid, Reason = preflightError + "; no commands sent." });
                 return invalid;
             }
+            var requests = RequestsFromProfile(profile);
+            var result = Apply(requests, cancellation);
+            result.Label = string.IsNullOrEmpty(profile.Name) ? "Current settings" : "Profile '" + profile.Name + "'";
+            return result;
+        }
+
+        public static List<TuningRequest> RequestsFromProfile(Profile profile)
+        {
+            if (profile == null) throw new ArgumentNullException(nameof(profile));
+            var requests = new List<TuningRequest>();
             if (profile.CoMargins != null)
                 requests.AddRange(profile.CoMargins.OrderBy(x => x.Key).Select(x => new TuningRequest { Kind = TuningKind.CurveOptimizer, Index = x.Key, Value = x.Value }));
             if (profile.Fmax.HasValue) requests.Add(new TuningRequest { Kind = TuningKind.Fmax, Value = profile.Fmax.Value });
@@ -62,9 +71,7 @@ namespace ZenStatesDebugTool
             AddLimit(requests, TuningKind.Tdc, profile.TdcAmps);
             AddLimit(requests, TuningKind.Edc, profile.EdcAmps);
             AddLimit(requests, TuningKind.Scalar, profile.PboScalar);
-            var result = Apply(requests, cancellation);
-            result.Label = string.IsNullOrEmpty(profile.Name) ? "Current settings" : "Profile '" + profile.Name + "'";
-            return result;
+            return requests;
         }
 
         private static void AddLimit(List<TuningRequest> requests, TuningKind kind, int? value)

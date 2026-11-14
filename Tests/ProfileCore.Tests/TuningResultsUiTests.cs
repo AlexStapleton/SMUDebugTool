@@ -54,7 +54,9 @@ namespace ProfileCore.Tests
                             Reason = "No getter"
                         });
                         panel.ShowResult(result);
-                        Assert.Same(result, panel.Result);
+                        Assert.NotSame(result, panel.Result);
+                        Assert.Equal(result.StartedUtc, panel.Result.StartedUtc);
+                        Assert.Equal(result.Rows[0].Request.Value, panel.Result.Rows[0].Request.Value);
                         Assert.Contains("readback unavailable", panel.Controls.OfType<Panel>().Single().Controls.OfType<Label>().Single().Text);
                         Assert.Equal(3, overview.Columns.Count);
                         using (var details = new ApplyResultsForm(result))
