@@ -115,20 +115,23 @@ namespace ZenStatesDebugTool
                     }
                     row.Outcome = TuningOutcome.AcceptedUnverified;
                     row.Reason = "Accepted; no supported direct readback.";
-                    if (row.Request.Kind != TuningKind.CurveOptimizer && row.Request.Kind != TuningKind.Fmax) continue;
+                    if (row.Request.Kind != TuningKind.CurveOptimizer && row.Request.Kind != TuningKind.Fmax && row.Request.Kind != TuningKind.CurveShaper) continue;
                     // Cancellation never hides an already accepted write.
                     if (cancellation.IsCancellationRequested) { row.Reason = "Accepted; cancelled before readback."; break; }
                     try { row.Read = transport.Read(row.Request); }
                     catch (Exception ex) { row.Reason = "Accepted; readback failed: " + ex.Message; break; }
                     if (row.Read != null && (row.Read.Status != 1 || row.Request.Kind == TuningKind.Fmax && row.Read.Value == 0))
-                        row.Read.Value = null;
-                    if (row.Read?.Status == 1 && row.Read.Direct && row.Read.Value.HasValue && !(row.Request.Kind == TuningKind.Fmax && row.Read.Value == 0))
+                        { row.Read.Value = null; row.Read.Medium = row.Read.High = null; }
+                    bool completeBands = row.Request.Kind != TuningKind.CurveShaper || row.Read?.Medium.HasValue == true && row.Read.High.HasValue;
+                    if (row.Read?.Status == 1 && row.Read.Direct && row.Read.ReadIssue == null && row.Read.Value.HasValue && completeBands && !(row.Request.Kind == TuningKind.Fmax && row.Read.Value == 0))
                     {
-                        row.Outcome = row.Read.Value == row.Request.Value ? TuningOutcome.Verified : TuningOutcome.Mismatch;
+                        bool matches = row.Read.Value == row.Request.Value && (row.Request.Kind != TuningKind.CurveShaper || row.Read.Medium == row.Request.Medium && row.Read.High == row.Request.High);
+                        row.Outcome = matches ? TuningOutcome.Verified : TuningOutcome.Mismatch;
                         row.Reason = row.Outcome == TuningOutcome.Verified ? "Fresh direct readback matched." : "Fresh direct readback differs; requested value retained.";
                     }
-                    else if (row.Read?.Status != null) row.Reason = "Accepted; direct readback unavailable or failed.";
-                    if (IsFatal(row.Read?.Status)) break;
+                    else if (row.Read?.ReadIssue != null) row.Reason = "Write accepted; " + row.Read.ReadIssue;
+                    else if (row.Read?.Status != null) row.Reason = row.Read.Status != 1 ? "Write accepted; readback failed: " + TuningResultFormatter.StatusText(row.Read.Status) + "." : "Write accepted; complete direct readback unavailable.";
+                    if (row.Read != null && !row.Read.Status.HasValue || IsFatal(row.Read?.Status)) break;
                 }
                 catch (Exception ex) { row.Outcome = TuningOutcome.Error; row.Reason = ex.Message; break; }
             }

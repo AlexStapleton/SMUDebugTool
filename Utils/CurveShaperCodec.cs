@@ -15,7 +15,10 @@ namespace ZenStatesDebugTool
             {
                 if (merged == null) merged = new uint[5];
                 var request = row.Request;
-                merged[request.Index] = Pack((int)request.Value, request.Medium, request.High);
+                merged[request.Index] = row.Outcome == TuningOutcome.Mismatch && row.Read?.Status == 1 && row.Read.Direct &&
+                    row.Read.Value.HasValue && row.Read.Medium.HasValue && row.Read.High.HasValue && row.Read.ReadIssue == null
+                    ? Pack((int)row.Read.Value.Value, row.Read.Medium.Value, row.Read.High.Value)
+                    : Pack((int)request.Value, request.Medium, request.High);
             }
             return merged;
         }

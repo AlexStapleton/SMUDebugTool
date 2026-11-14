@@ -131,7 +131,7 @@ namespace ProfileCore.Tests
             session.RecordResult(result);
             Assert.True(session.IsEdited(Co(0, -25)));
             Assert.Contains("-20", session.ReportedText(Co(0, -25)));
-            Assert.Equal(0, session.Baseline(Co(0, -25)).Value);
+            Assert.Equal(-20, session.Baseline(Co(0, -25)).Value);
         }
         [Fact]
         public void CpuObservationIsIndependentOfSavedValueAndRequestMutation()

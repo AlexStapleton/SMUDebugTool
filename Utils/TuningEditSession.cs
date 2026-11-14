@@ -41,7 +41,8 @@ namespace ZenStatesDebugTool
             return p;
         }
         private static TuningReply Reply(TuningReply r) => r == null ? null : new TuningReply {
-            Status = r.Status, Value = r.Value, Direct = r.Direct, Route = r.Route, Command = r.Command,
+            Status = r.Status, Value = r.Value, Medium = r.Medium, High = r.High, RawArguments = r.RawArguments == null ? null : (uint[])r.RawArguments.Clone(),
+            ReadIssue = r.ReadIssue, Direct = r.Direct, Route = r.Route, Command = r.Command,
             TargetMask = r.TargetMask, TargetIdentity = r.TargetIdentity };
         public static TuningResult Result(TuningResult source)
         {
@@ -92,10 +93,12 @@ namespace ZenStatesDebugTool
         {
             foreach (var row in result.Rows)
             {
-                if (row.Read?.Status == 1 && row.Read.Direct && row.Read.Value.HasValue)
+                if (row.Read?.Status == 1 && row.Read.Direct && row.Read.ReadIssue == null && row.Read.Value.HasValue &&
+                    (row.Request.Kind != TuningKind.CurveShaper || row.Read.Medium.HasValue && row.Read.High.HasValue))
                 {
                     var observed = TuningSnapshots.Request(row.Request); observed.Value = row.Read.Value.Value;
-                    Observe(observed, "CPU readback", false);
+                    if (row.Request.Kind == TuningKind.CurveShaper) { observed.Medium = row.Read.Medium.Value; observed.High = row.Read.High.Value; }
+                    Observe(observed, "CPU readback", row.Outcome == TuningOutcome.Mismatch);
                 }
                 if (row.IsAccepted && (row.Outcome == TuningOutcome.Verified || row.Outcome == TuningOutcome.AcceptedUnverified))
                     SetBaseline(row.Request, row.Outcome == TuningOutcome.Verified ? "CPU readback" : "Last sent; unverified");

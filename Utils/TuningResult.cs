@@ -24,6 +24,10 @@ namespace ZenStatesDebugTool
     {
         public uint? Status { get; set; }
         public decimal? Value { get; set; }
+        public int? Medium { get; set; }
+        public int? High { get; set; }
+        public uint[] RawArguments { get; set; }
+        public string ReadIssue { get; set; }
         public string Route { get; set; }
         public uint? Command { get; set; }
         public uint? TargetMask { get; set; }
@@ -69,6 +73,20 @@ namespace ZenStatesDebugTool
 
     public static class TuningResultFormatter
     {
+        public static string Observed(TuningRow row)
+        {
+            if (row.Read == null || !row.Read.Value.HasValue || row.Read.ReadIssue != null) return "unavailable";
+            return row.Request.Kind == TuningKind.CurveShaper
+                ? row.Read.Medium.HasValue && row.Read.High.HasValue ? $"{row.Read.Value}/{row.Read.Medium}/{row.Read.High} low/medium/high" : "unavailable"
+                : row.Read.Value.Value.ToString(CultureInfo.InvariantCulture);
+        }
+        public static string FriendlyOutcome(TuningRow row)
+        {
+            if (row.Request.Kind == TuningKind.CurveShaper && row.Outcome == TuningOutcome.AcceptedUnverified)
+                return UiText.T(row.Read?.ReadIssue != null ? "Accepted; readback inconclusive" : row.Read != null && row.Read.Status != 1
+                    ? "Accepted; readback failed" : "Accepted; not verified");
+            return FriendlyOutcome(row.Outcome);
+        }
         public static string SettingName(TuningRequest request)
         {
             switch (request.Kind)
@@ -102,10 +120,10 @@ namespace ZenStatesDebugTool
             if (result.Rows.Count == 1)
             {
                 var row = result.Rows[0];
-                return $"{SettingName(row.Request)} {row.Request.Requested} {row.Request.Unit} — {FriendlyOutcome(row.Outcome)}";
+                return $"{SettingName(row.Request)} {row.Request.Requested} {row.Request.Unit} — {FriendlyOutcome(row)}";
             }
             return string.Join("; ", result.Rows.GroupBy(r => r.Outcome).Select(g => g.Count() + " " +
-                (g.Key == TuningOutcome.AcceptedUnverified ? UiText.T("sent without readback") :
+                (g.Key == TuningOutcome.AcceptedUnverified ? UiText.T("not verified") :
                  FriendlyOutcome(g.Key))));
         }
         public sealed class DisplayRow
@@ -126,13 +144,13 @@ namespace ZenStatesDebugTool
                     rows.Add(new DisplayRow {
                         Setting = UiText.T(first.Request.Kind == TuningKind.CurveOptimizer ? "Curve Optimizer" : "Curve Shaper"),
                         Requested = string.Format(UiText.T(first.Request.Kind == TuningKind.CurveOptimizer ? "{0} cores" : "{0} tiers"), group.Count()),
-                        Result = FriendlyOutcome(first.Outcome)
+                        Result = FriendlyOutcome(first)
                     });
                 else foreach (var row in group)
                     rows.Add(new DisplayRow {
                         Setting = SettingName(row.Request), Requested = row.Request.Requested + " " + row.Request.Unit,
-                        Result = FriendlyOutcome(row.Outcome),
-                        Observed = row.Read?.Value?.ToString(CultureInfo.InvariantCulture) + (row.Read?.Value != null ? " " + row.Request.Unit : "")
+                        Result = FriendlyOutcome(row),
+                        Observed = Observed(row) == "unavailable" ? "" : Observed(row) + " " + row.Request.Unit
                     });
             }
             return rows;
@@ -140,7 +158,8 @@ namespace ZenStatesDebugTool
         private static string Reply(TuningReply reply)
         {
             if (reply == null) return "unavailable";
-            return $"{reply.Route ?? "CPU API"} cmd={Hex(reply.Command)} target={Hex(reply.TargetMask)} {reply.TargetIdentity} status={Hex(reply.Status)} ({StatusText(reply.Status)})";
+            return $"{reply.Route ?? "CPU API"} cmd={Hex(reply.Command)} target={Hex(reply.TargetMask)} {reply.TargetIdentity} status={Hex(reply.Status)} ({StatusText(reply.Status)})" +
+                (reply.RawArguments == null ? "" : "; args=" + string.Join(",", reply.RawArguments.Select(a => $"0x{a:X8}")));
         }
         private static string Hex(uint? value) => value.HasValue ? $"0x{value.Value:X2}" : "unavailable";
         public static string StatusText(uint? status)
@@ -160,7 +179,7 @@ namespace ZenStatesDebugTool
                 default: return "unrecognized status";
             }
         }
-        public static string Row(TuningRow row) => $"{row.TimestampUtc:O} {row.Request.Setting}: requested {row.Request.Requested} {row.Request.Unit}; {TuningResult.OutcomeLabel(row.Outcome)}; observed {row.Read?.Value?.ToString(CultureInfo.InvariantCulture) ?? "unavailable"} ({row.Read?.Source ?? "unavailable"}); write [{Reply(row.Write)}]; read [{Reply(row.Read)}]; {row.Reason}";
+        public static string Row(TuningRow row) => $"{row.TimestampUtc:O} {row.Request.Setting}: requested {row.Request.Requested} {row.Request.Unit}; {TuningResult.OutcomeLabel(row.Outcome)}; observed {Observed(row)} ({row.Read?.Source ?? "unavailable"}); write [{Reply(row.Write)}]; read [{Reply(row.Read)}]; {row.Reason}";
         public static string Report(TuningResult result) => $"{result.Label} — {result.StartedUtc:O} — v{result.ApplicationVersion}: {result.Summary}" + Environment.NewLine + string.Join(Environment.NewLine, result.Rows.Select(Row));
         // The startup reader consumes the last physical line; never embed newlines from errors/names.
         public static string LogLine(string name, TuningResult result) => ($"Profile '{name}' — {result.StartedUtc:O} — v{result.ApplicationVersion}: {result.Summary} Success={result.Success}; " + string.Join(" | ", result.Rows.Select(Row))).Replace('\r', ' ').Replace('\n', ' ');
