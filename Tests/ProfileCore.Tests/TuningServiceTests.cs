@@ -39,7 +39,8 @@ namespace ProfileCore.Tests
             public int Writes, Reads;
             public Func<TuningRequest, bool> Supported = r => true;
             public Func<TuningRequest, TuningReply> OnWrite = r => new TuningReply { Status = 1 };
-            public Func<TuningRequest, TuningReply> OnRead = r => new TuningReply { Status = 1, Value = r.Value, Direct = true };
+            public Func<TuningRequest, TuningReply> OnRead = r => new TuningReply { Status = 1, Value = r.Value, Medium = r.Kind == TuningKind.CurveShaper ? (int?)r.Medium : null,
+                High = r.Kind == TuningKind.CurveShaper ? (int?)r.High : null, Direct = true };
             public bool IsSupported(TuningRequest r, out string reason) { reason = "Unsupported or disabled."; return Supported(r); }
             public TuningReply Write(TuningRequest r) { Writes++; return OnWrite(r); }
             public TuningReply Read(TuningRequest r) { Reads++; return OnRead(r); }
@@ -141,7 +142,7 @@ namespace ProfileCore.Tests
             Assert.Equal(0, fake.Writes); Assert.Equal(1, result.ExitCode);
         }
         [Fact]
-        public void FullProfileUsesAllFeaturesButOnlyCoAndFmaxGetReadback()
+        public void FullProfileVerifiesCoFmaxAndEveryCurveShaperBand()
         {
             var fake = new Fake();
             var profile = new Profile
@@ -155,9 +156,9 @@ namespace ProfileCore.Tests
                 PboScalar = 2
             };
             var result = new ProfileApplier().Apply(profile, fake);
-            Assert.Equal(12, fake.Writes); Assert.Equal(3, fake.Reads);
-            Assert.Equal(3, result.Rows.Count(r => r.Outcome == TuningOutcome.Verified));
-            Assert.Equal(9, result.Rows.Count(r => r.Outcome == TuningOutcome.AcceptedUnverified));
+            Assert.Equal(12, fake.Writes); Assert.Equal(8, fake.Reads);
+            Assert.Equal(8, result.Rows.Count(r => r.Outcome == TuningOutcome.Verified));
+            Assert.Equal(4, result.Rows.Count(r => r.Outcome == TuningOutcome.AcceptedUnverified));
             Assert.True(result.Success);
         }
         [Fact]
@@ -212,7 +213,7 @@ namespace ProfileCore.Tests
             Assert.Equal(CurveShaperCodec.Pack(-25, -10, 0), merged[0]);
             Assert.Equal(42U, merged[1]); Assert.Equal(43U, merged[2]);
             Assert.Equal(CurveShaperCodec.Pack(-1, -1, -1), old[0]);
-            Assert.Equal(TuningOutcome.AcceptedUnverified, result.Rows[0].Outcome);
+            Assert.Equal(TuningOutcome.Verified, result.Rows[0].Outcome);
             Assert.Equal(TuningOutcome.Rejected, result.Rows[1].Outcome);
             Assert.Equal(TuningOutcome.NotAttempted, result.Rows[2].Outcome);
         }

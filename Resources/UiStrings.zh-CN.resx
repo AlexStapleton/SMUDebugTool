@@ -577,4 +577,16 @@
   <data name="Requested value" xml:space="preserve">
     <value>请求值</value>
   </data>
+  <data name="Accepted; not verified" xml:space="preserve">
+    <value>已接受；未验证</value>
+  </data>
+  <data name="Accepted; readback failed" xml:space="preserve">
+    <value>已接受；回读失败</value>
+  </data>
+  <data name="Accepted; readback inconclusive" xml:space="preserve">
+    <value>已接受；回读结果不确定</value>
+  </data>
+  <data name="not verified" xml:space="preserve">
+    <value>未验证</value>
+  </data>
 </root>

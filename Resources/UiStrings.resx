@@ -577,4 +577,16 @@
   <data name="Requested value" xml:space="preserve">
     <value>Requested value</value>
   </data>
+  <data name="Accepted; not verified" xml:space="preserve">
+    <value>Accepted; not verified</value>
+  </data>
+  <data name="Accepted; readback failed" xml:space="preserve">
+    <value>Accepted; readback failed</value>
+  </data>
+  <data name="Accepted; readback inconclusive" xml:space="preserve">
+    <value>Accepted; readback inconclusive</value>
+  </data>
+  <data name="not verified" xml:space="preserve">
+    <value>not verified</value>
+  </data>
 </root>
