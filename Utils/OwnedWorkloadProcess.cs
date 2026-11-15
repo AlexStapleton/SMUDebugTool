@@ -23,7 +23,7 @@ namespace ZenStatesDebugTool
             string outcome = null, detail = null; int? exit = null;
             try {
                 cancellation.ThrowIfCancellationRequested();
-                string issue = healthIssue?.Invoke(); if (issue != null) throw new InvalidOperationException(issue);
+                string issue = recipe.LaunchIssue?.Invoke() ?? healthIssue?.Invoke(); if (issue != null) throw new InvalidOperationException(issue);
                 job = CreateJobObject(IntPtr.Zero, null); Check(job != IntPtr.Zero);
                 var limits = new ExtendedLimits(); limits.Basic.LimitFlags = 0x2000; // KILL_ON_JOB_CLOSE
                 if (recipe.AffinityMask != 0) { limits.Basic.LimitFlags |= 0x10; limits.Basic.Affinity = new UIntPtr(recipe.AffinityMask); }
@@ -74,6 +74,7 @@ namespace ZenStatesDebugTool
             }
             if (outcome == null) {
                 if (exit != 0 || output.Issue != null) { outcome = "Failed"; detail = output.Issue ?? "Workload exit code " + exit + "."; }
+                else if (!recipe.Scored) { outcome = "Load finished"; detail = "Unscored load ended; changing-offset scores excluded."; }
                 else if (!output.Score.HasValue) { outcome = "Inconclusive"; detail = "No unique recognized CPU score. Inspect output; no stability claim."; }
                 else { outcome = "Completed"; detail = "Benchmark completed; computational correctness and stability coverage remain pending."; }
             }

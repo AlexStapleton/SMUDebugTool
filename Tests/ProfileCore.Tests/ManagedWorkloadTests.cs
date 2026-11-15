@@ -27,6 +27,7 @@ namespace ProfileCore.Tests
             }
             return path;
         });
+        internal static string FixtureExecutable => Fixture.Value;
         private static WorkloadRecipe Recipe(string args, int timeout = 10, ulong mask = 0) => new WorkloadRecipe(Fixture.Value, args, "Fixture only", TimeSpan.FromSeconds(timeout), mask);
         private static string TempFile() => Path.Combine(Path.GetTempPath(), "SMUDebugTool workload " + Guid.NewGuid().ToString("N") + ".txt");
         private static async Task WaitFile(string path)
@@ -85,6 +86,17 @@ namespace ProfileCore.Tests
             Assert.Equal("Completed", result.Outcome); Assert.Contains("ARG=" + literal, result.Output);
             var flood = await new OwnedWorkloadProcess().RunAsync(Recipe("flood"), () => null, CancellationToken.None);
             Assert.Equal("Failed", flood.Outcome); Assert.True(flood.Output.Length <= 65536); Assert.Contains("exceeded", flood.Detail);
+        }
+        [Fact]
+        public async Task UnscoredLoadDoesNotInventABenchmarkScoreAndRechecksLaunchGuard()
+        {
+            var recipe = new WorkloadRecipe(Fixture.Value, "no-score", "Synthetic unscored load", TimeSpan.FromSeconds(10), 0, false);
+            var load = await new OwnedWorkloadProcess().RunAsync(recipe, () => null, CancellationToken.None);
+            Assert.Equal("Load finished", load.Outcome); Assert.Null(load.Score);
+            string marker = TempFile();
+            var blocked = new WorkloadRecipe(Fixture.Value, "wait " + OwnedWorkloadProcess.QuoteArgument(marker), "Synthetic", TimeSpan.FromSeconds(10), 0, false, () => "Existing workload is not owned");
+            var result = await new OwnedWorkloadProcess().RunAsync(blocked, () => null, CancellationToken.None);
+            Assert.Equal("Failed", result.Outcome); Assert.False(File.Exists(marker));
         }
         [Fact]
         public void ScoreParserHandlesChunksAndRejectsDuplicateOrPartialResults()

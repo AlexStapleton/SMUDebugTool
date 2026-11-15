@@ -42,11 +42,19 @@ namespace ZenStatesDebugTool
         public string Identity { get; }
         public TimeSpan Timeout { get; }
         public ulong AffinityMask { get; }
-        public WorkloadRecipe(string executable, string arguments, string identity, TimeSpan timeout, ulong affinityMask = 0)
+        public bool Scored { get; }
+        public Func<string> LaunchIssue { get; }
+        public WorkloadRecipe(string executable, string arguments, string identity, TimeSpan timeout, ulong affinityMask = 0, bool scored = true, Func<string> launchIssue = null)
         {
             if (!Path.IsPathRooted(executable) || executable.StartsWith(@"\\", StringComparison.Ordinal) || !string.Equals(Path.GetExtension(executable), ".exe", StringComparison.OrdinalIgnoreCase) || !File.Exists(executable)) throw new ArgumentException("Select an existing local executable.");
             if (timeout < TimeSpan.FromSeconds(1) || timeout > TimeSpan.FromHours(2) || arguments?.Length > 4096) throw new ArgumentException("Invalid workload bounds.");
-            Executable = Path.GetFullPath(executable); Arguments = arguments ?? ""; Identity = identity; Timeout = timeout; AffinityMask = affinityMask;
+            Executable = Path.GetFullPath(executable); Arguments = arguments ?? ""; Identity = identity; Timeout = timeout; AffinityMask = affinityMask; Scored = scored; LaunchIssue = launchIssue;
+        }
+        public WorkloadRecipe ContinuousLoad(int seconds)
+        {
+            if (seconds < 10 || seconds > 3600 || AffinityMask != 0) throw new ArgumentException("Continuous balancing requires all processors and a bounded duration.");
+            string arguments = Regex.Replace(Arguments, @"g_CinebenchMinimumTestDuration=\d+", "g_CinebenchMinimumTestDuration=" + seconds.ToString(CultureInfo.InvariantCulture));
+            return new WorkloadRecipe(Executable, arguments, Identity + " / unscored continuous load", TimeSpan.FromSeconds(seconds + 120), 0, false, LaunchIssue);
         }
         public static WorkloadRecipe Cinebench2024(string path, int durationSeconds, int timeoutSeconds, WorkloadTarget target, bool singleThread)
         {
@@ -54,21 +62,26 @@ namespace ZenStatesDebugTool
             var version = FileVersionInfo.GetVersionInfo(path);
             if (!string.Equals(version.ProductName, "Cinebench", StringComparison.OrdinalIgnoreCase) || version.FileMajorPart != 2024 || version.FileMinorPart != 1 || version.FileBuildPart != 0)
                 throw new InvalidOperationException("This adapter requires Cinebench 2024.1.0; other versions need a separate adapter review.");
-            foreach (var existing in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(path)))
-                using (existing) {
-                    string existingPath;
-                    try { existingPath = existing.MainModule?.FileName; }
-                    catch (InvalidOperationException) { continue; }
-                    catch (System.ComponentModel.Win32Exception) { throw new InvalidOperationException("Cannot identify an existing Cinebench instance. Close it before a managed test."); }
-                    if (existingPath == null || string.Equals(Path.GetFullPath(path), existingPath, StringComparison.OrdinalIgnoreCase))
-                        throw new InvalidOperationException("Close the existing instance of this Cinebench installation before starting a managed test. It will not be attached to or stopped.");
-                }
+            var existingIssue = ExistingInstance(path); if (existingIssue != null) throw new InvalidOperationException(existingIssue);
             string fingerprint;
             using (var stream = File.OpenRead(path)) using (var sha = SHA256.Create()) fingerprint = BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
             string args = "g_CinebenchCpuXTest=" + (singleThread ? "false" : "true") + " g_CinebenchCpu1Test=" + (singleThread ? "true" : "false") +
                 " g_CinebenchAllTests=false g_CinebenchMinimumTestDuration=" + durationSeconds.ToString(CultureInfo.InvariantCulture) + " g_console=true";
             return new WorkloadRecipe(path, args, "Cinebench 2024.1.0 / " + (singleThread ? "single thread" : "multi thread") + " / " + target.Name + " / " + durationSeconds + " s / SHA256 " + fingerprint,
-                TimeSpan.FromSeconds(timeoutSeconds), target.Mask);
+                TimeSpan.FromSeconds(timeoutSeconds), target.Mask, true, () => ExistingInstance(path));
+        }
+        private static string ExistingInstance(string path)
+        {
+            foreach (var existing in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(path)))
+                using (existing) {
+                    string existingPath;
+                    try { existingPath = existing.MainModule?.FileName; }
+                    catch (InvalidOperationException) { continue; }
+                    catch (System.ComponentModel.Win32Exception) { return "Cannot identify an existing Cinebench instance. Close it before a managed test."; }
+                    if (existingPath == null || string.Equals(Path.GetFullPath(path), existingPath, StringComparison.OrdinalIgnoreCase))
+                        return "Close the existing instance of this Cinebench installation before starting a managed test. It will not be attached to or stopped.";
+                }
+            return null;
         }
     }
     public sealed class WorkloadResult

@@ -637,4 +637,47 @@
   <data name="Show test setup" xml:space="preserve"><value>Show test setup</value></data>
   <data name="Stop owned test" xml:space="preserve"><value>Stop owned test</value></data>
   <data name="Timeout seconds" xml:space="preserve"><value>Timeout seconds</value></data>
+  <data name="Additional core coverage" xml:space="preserve"><value>Additional core coverage</value></data>
+  <data name="Balancing under load" xml:space="preserve"><value>Balancing under load</value></data>
+  <data name="Budget (minutes)" xml:space="preserve"><value>Budget (minutes)</value></data>
+  <data name="CO optimizer" xml:space="preserve"><value>CO optimizer</value></data>
+  <data name="CO optimizer — guided session" xml:space="preserve"><value>CO optimizer — guided session</value></data>
+  <data name="Comparison and report" xml:space="preserve"><value>Comparison and report</value></data>
+  <data name="Continue balancing" xml:space="preserve"><value>Continue balancing</value></data>
+  <data name="CurrentCO" xml:space="preserve"><value>Last CO readback</value></data>
+  <data name="Decision complete" xml:space="preserve"><value>Decision complete</value></data>
+  <data name="Eligibility" xml:space="preserve"><value>Eligibility</value></data>
+  <data name="Finish balancing &amp; validate" xml:space="preserve"><value>Finish balancing &amp; validate</value></data>
+  <data name="Improve current offsets" xml:space="preserve"><value>Improve current offsets</value></data>
+  <data name="Keep temporarily" xml:space="preserve"><value>Keep temporarily</value></data>
+  <data name="Measuring reference" xml:space="preserve"><value>Measuring reference</value></data>
+  <data name="Negative CO bound" xml:space="preserve"><value>Negative CO bound</value></data>
+  <data name="New session" xml:space="preserve"><value>New session</value></data>
+  <data name="Pause" xml:space="preserve"><value>Pause</value></data>
+  <data name="Paused" xml:space="preserve"><value>Paused</value></data>
+  <data name="Per-core evidence" xml:space="preserve"><value>Per-core evidence</value></data>
+  <data name="Prepare" xml:space="preserve"><value>Prepare</value></data>
+  <data name="Read current state" xml:space="preserve"><value>Read current state</value></data>
+  <data name="Ready for validation" xml:space="preserve"><value>Ready for validation</value></data>
+  <data name="Reference ready" xml:space="preserve"><value>Reference ready</value></data>
+  <data name="ReferenceCO" xml:space="preserve"><value>Reference CO</value></data>
+  <data name="Resume session" xml:space="preserve"><value>Resume session</value></data>
+  <data name="Retry readiness" xml:space="preserve"><value>Retry readiness</value></data>
+  <data name="Review candidate" xml:space="preserve"><value>Review candidate</value></data>
+  <data name="Review recovery" xml:space="preserve"><value>Review recovery</value></data>
+  <data name="Run selected core render" xml:space="preserve"><value>Run selected core render</value></data>
+  <data name="Samples" xml:space="preserve"><value>Samples</value></data>
+  <data name="Save experimental profile" xml:space="preserve"><value>Save experimental profile</value></data>
+  <data name="Save offsets &amp; measure CO 0 reference" xml:space="preserve"><value>Save offsets &amp; measure CO 0 reference</value></data>
+  <data name="Save offsets &amp; measure current reference" xml:space="preserve"><value>Save offsets &amp; measure current reference</value></data>
+  <data name="Scored repeats" xml:space="preserve"><value>Scored repeats</value></data>
+  <data name="Start from CO 0" xml:space="preserve"><value>Start from CO 0</value></data>
+  <data name="Start supervised balancing" xml:space="preserve"><value>Start supervised balancing</value></data>
+  <data name="Stop &amp; restore original" xml:space="preserve"><value>Stop &amp; restore original</value></data>
+  <data name="Stop at CPU °C" xml:space="preserve"><value>Stop at CPU °C</value></data>
+  <data name="Test seconds" xml:space="preserve"><value>Test seconds</value></data>
+  <data name="Test settings" xml:space="preserve"><value>Test settings</value></data>
+  <data name="Validate current candidate" xml:space="preserve"><value>Validate current candidate</value></data>
+  <data name="Validate fixed candidate" xml:space="preserve"><value>Validate fixed candidate</value></data>
+  <data name="Validating fixed offsets" xml:space="preserve"><value>Validating fixed offsets</value></data>
 </root>

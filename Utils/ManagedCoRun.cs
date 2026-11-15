@@ -13,6 +13,7 @@ namespace ZenStatesDebugTool
         private readonly Func<Task<NativeCoContext>> capture;
         private readonly Func<CoBatchPlan, CancellationToken, Task<TuningResult>> apply;
         private readonly CoRecoveryStore recovery;
+        private readonly Func<DateTimeOffset> utcNow;
         private int running;
         public bool AssistanceBlocked { get; private set; }
         private readonly object suggestionGate = new object();
@@ -20,8 +21,8 @@ namespace ZenStatesDebugTool
         public CoStepProposal SuggestedStep { get { lock (suggestionGate) return suggestion; } }
         public NativeCoContext SuggestionContext { get; private set; }
         public ManagedCoRun(NativeCoSession session, IWorkloadRunner runner, Func<Task<NativeCoContext>> capture,
-            Func<CoBatchPlan, CancellationToken, Task<TuningResult>> apply, CoRecoveryStore recovery)
-        { this.session = session; this.runner = runner; this.capture = capture; this.apply = apply; this.recovery = recovery; }
+            Func<CoBatchPlan, CancellationToken, Task<TuningResult>> apply, CoRecoveryStore recovery, Func<DateTimeOffset> utcNow = null)
+        { this.session = session; this.runner = runner; this.capture = capture; this.apply = apply; this.recovery = recovery; this.utcNow = utcNow ?? (() => DateTimeOffset.UtcNow); }
         public async Task<WorkloadResult> RunAsync(string role, bool zeroBaseline, WorkloadRecipe recipe, Func<string> health, CancellationToken cancellation, Func<NativeCoContext, long, CoStepProposal> suggest = null)
         {
             if (Interlocked.CompareExchange(ref running, 1, 0) != 0) throw new InvalidOperationException("A managed test is already running.");
@@ -45,7 +46,7 @@ namespace ZenStatesDebugTool
                 while ((issue = health?.Invoke()) != null && deadline.Elapsed < TimeSpan.FromSeconds(5)) await Task.Delay(100, cancellation);
                 if (issue != null) throw new InvalidOperationException(issue);
                 cancellation.ThrowIfCancellationRequested();
-                session.Begin(role, recipe.Identity, before, DateTimeOffset.UtcNow); began = true;
+                session.Begin(role, recipe.Identity, before, utcNow()); began = true;
                 long runStart = System.Diagnostics.Stopwatch.GetTimestamp(), lastSuggestion = 0;
                 CoStepProposal proposed = null;
                 result = await runner.RunAsync(recipe, () => {
@@ -57,7 +58,7 @@ namespace ZenStatesDebugTool
                     return problem;
                 }, cancellation);
                 if (cancellation.IsCancellationRequested && result.Completed) { result.Outcome = "Cancelled"; result.Score = null; result.Detail = "Stopped before run finalization."; }
-                session.MarkEnd(DateTimeOffset.UtcNow);
+                session.MarkEnd(utcNow());
                 var after = await capture();
                 string context = NativeCoSession.Context(before, after);
                 if (result.Completed && (context != "CO endpoints unchanged" || session.Trials.Last().Changes.Count > 0)) { result.Outcome = "Inconclusive"; result.Score = null; result.Detail = "Run context changed or contains tuning activity: " + context; }

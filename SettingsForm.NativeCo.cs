@@ -8,17 +8,25 @@ namespace ZenStatesDebugTool
 {
     public partial class SettingsForm
     {
-        private readonly NativeCoSession nativeSession = new NativeCoSession();
-        private NativeCoWorkbenchForm nativeWorkbench;
+        private INativeCoView nativeWorkbench;
         private readonly CoRecoveryStore nativeRecovery = new CoRecoveryStore(CoRecoveryStore.DefaultPath);
         private IReadOnlyList<NativeCoreBinding> nativeBindings;
         private bool nativeManagedOperation;
         private void ShowNativeWorkbench()
         {
             if (nativeWorkbench != null && !nativeWorkbench.IsDisposed) { nativeWorkbench.Activate(); return; }
-            nativeWorkbench = new NativeCoWorkbenchForm(nativeSession, CreateNativeSourceAsync, CaptureNativeContextAsync, ApplyNativeStepAsync,
-                new ManagedCoServices { Recovery = nativeRecovery, Apply = ApplyNativeBatchAsync, Targets = NativeLoadTargetsAsync, SetHardwareOwner = value => nativeManagedOperation = value,
-                    InitialExecutable = WorkloadPreferences.Load(), RememberExecutable = WorkloadPreferences.Save });
+            nativeWorkbench = new GuidedCoOptimizerForm(new GuidedCoServices {
+                Recovery = nativeRecovery, Journal = new CoTrialJournal(CoRecoveryStore.DefaultPath + ".trials.json"), Capture = CaptureNativeContextAsync,
+                ApplyBatch = ApplyNativeBatchAsync, ApplyStep = ApplyGuidedNativeStepAsync, CreateSource = CreateNativeSourceAsync, LoadTargets = NativeLoadTargetsAsync,
+                SetHardwareOwner = value => nativeManagedOperation = value, InitialExecutable = WorkloadPreferences.Load(), SaveProfile = SaveGuidedCoProfileAsync,
+                CreateSafety = () => new CoRuntimeSafety(() => {
+                    Hardware.ThrowIfClosing();
+                    return Hardware.TryRead(() => {
+                        float? value = cpu.GetCpuTemperature();
+                        return value.HasValue && !float.IsNaN(value.Value) && !float.IsInfinity(value.Value) ? (decimal?)value.Value : null;
+                    }, out decimal? temperature) ? temperature : null;
+                }, new WheaCoIncidentSource())
+            });
             nativeWorkbench.Show(this);
         }
         private Task<Func<CancellationToken, IReadOnlyList<CoreVidReading>>> CreateNativeSourceAsync()
@@ -95,7 +103,9 @@ namespace ZenStatesDebugTool
             using (var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellation, Hardware.ClosingToken)) {
                 var result = await RunHardwareWriteAsync(() => Hardware.Locked(() => {
                     if (plan.Requested.Count != hardware.Topology.Targets.Count || plan.Requested.Keys.Any(k => hardware.Topology.Find(k) == null)) throw new InvalidOperationException("Complete physical CO targets are required.");
-                    return CoBatchTransaction.Apply(new ZenStatesTuningTransport(cpu), plan.Expected, plan.Requested, linked.Token);
+                    ITuningTransport transport = new ZenStatesTuningTransport(cpu);
+                    if (plan.WriteGuard != null) transport = new GuardedCoTransport(transport, plan.WriteGuard, linked.Token);
+                    return CoBatchTransaction.Apply(transport, plan.Expected, plan.Requested, linked.Token);
                 }), true);
                 result.Label = "Managed CO baseline / recovery";
                 if (!shuttingDown && !IsDisposed) {
@@ -106,6 +116,36 @@ namespace ZenStatesDebugTool
                 }
                 return result;
             }
+        }
+        private async Task<TuningResult> ApplyGuidedNativeStepAsync(NativeCoContext expected, CoStepProposal proposal, Func<string> writeGuard, CancellationToken cancellation)
+        {
+            RequireOverviewReady(); var actual = await CaptureNativeContextAsync(); GuidedCoContext.Match(expected, actual);
+            using (var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellation, Hardware.ClosingToken)) {
+                var result = await RunHardwareWriteAsync(() => Hardware.Locked(() => {
+                    var transport = new GuardedCoTransport(new ZenStatesTuningTransport(cpu), writeGuard, linked.Token);
+                    foreach (var pair in expected.ObservedCo) {
+                        linked.Token.ThrowIfCancellationRequested();
+                        var request = new TuningRequest { Kind = TuningKind.CurveOptimizer, Index = pair.Key };
+                        if (hardware.Topology.Find(pair.Key) == null || !transport.IsSupported(request, out _)) throw new InvalidOperationException("Physical target changed; trial stopped.");
+                        var read = transport.Read(request);
+                        if (read?.Status != 1 || !read.Direct || read.ReadIssue != null || read.Value != pair.Value) throw new InvalidOperationException("Physical CO changed before trial; no setter sent.");
+                    }
+                    return NativeCoStepTransaction.Apply(transport, proposal, linked.Token);
+                }), true);
+                result.Label = "Guided one-core CO trial";
+                if (!shuttingDown && !IsDisposed) {
+                    foreach (var row in result.Rows.Where(r => r.Outcome == TuningOutcome.Verified))
+                        editControls.Observe(new TuningRequest { Kind = TuningKind.CurveOptimizer, Index = row.Request.Index, Value = row.Read.Value.Value }, "CPU readback");
+                    editControls.RecordResult(result); applyResultsPanel.ShowResult(result); PrependResult(TuningResultFormatter.Report(result) + Environment.NewLine);
+                }
+                return result;
+            }
+        }
+        private async Task SaveGuidedCoProfileAsync(NativeCoContext observed, string name)
+        {
+            var profile = GuidedCoProfiles.Create(observed, hardware.Topology, name);
+            await Task.Run(() => profileManager.SaveNew(profile));
+            if (!shuttingDown && !IsDisposed) RefreshProfileList(name);
         }
     }
 }

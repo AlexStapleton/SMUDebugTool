@@ -67,6 +67,14 @@ namespace ZenStatesDebugTool.Profiles
             var path = PathFor(name);
             if (File.Exists(path)) File.Delete(path);
         }
+        // Guided experiments never overwrite an existing profile or startup selection.
+        public void SaveNew(Profile profile)
+        {
+            if (profile == null || !IsValidName(profile.Name)) throw new ArgumentException("Choose a valid new profile name.");
+            EnsureDirectory(); string destination = PathFor(profile.Name), temporary = destination + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try { File.WriteAllText(temporary, JsonConvert.SerializeObject(profile, Formatting.Indented)); File.Move(temporary, destination); }
+            finally { if (File.Exists(temporary)) File.Delete(temporary); }
+        }
 
         // --- Legacy migration (Task 3 adds tests for these) ---
 

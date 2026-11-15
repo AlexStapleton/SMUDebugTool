@@ -6,12 +6,13 @@ The [capability and Curve Optimizer roadmap](docs/capability-and-CO-roadmap.md)
 is the living tracker for implemented changes, validation and remaining hardware gates.
 The implementation adds **Tools → CPU overview and capabilities**, on-demand
 readings, scalar verification and a separate temperature-ceiling action. **Tools →
-Native CO workbench** captures per-core VID and clocks through the existing driver,
-records baseline/candidate runs and offers explicit, verified one-step CO trials.
-Its **Managed tests** tab launches a selected Cinebench 2024.1.0 installation,
-supports a verified zero-CO baseline, parses scores and owns cancellation/recovery.
-There is no HWiNFO or CSV dependency. See the [workbench guide](docs/native-co-workbench.md) and
-[v1.51.0 notes](docs/release-notes-1.51.0.md) for its scope and limitations.
+CO optimizer** guides preparation, a zero/current-CO reference, supervised VID
+balancing under an owned Cinebench 2024.1.0 load, fixed-offset validation and an
+explicit keep/save/restore decision. It captures per-core VID through the existing
+driver, journals verified one-step trials and pauses on missing evidence or safety
+incidents. There is no HWiNFO or CSV dependency. Equal requested VID does not prove
+stability. See the [guided optimizer guide](docs/guided-co-optimizer.md) and
+[v1.52.0 notes](docs/release-notes-1.52.0.md) for its scope and hardware acceptance gates.
 
 ### Build and package this fork
 
