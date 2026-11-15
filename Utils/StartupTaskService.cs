@@ -5,6 +5,12 @@ using Microsoft.Win32.TaskScheduler;
 
 namespace ZenStatesDebugTool
 {
+    public sealed class StartupTaskState
+    {
+        public bool Exists { get; }
+        public string ProfileName { get; }
+        public StartupTaskState(bool exists, string profileName) { Exists = exists; ProfileName = profileName; }
+    }
     // Wraps the Windows Task Scheduler entry ("RyzenSDT") that re-applies a saved profile at
     // logon. Extracted from SettingsForm so the scheduled-task concern lives in one place and
     // the task name is no longer a string literal scattered across the form.
@@ -16,6 +22,19 @@ namespace ZenStatesDebugTool
     public static class StartupTaskService
     {
         public const string TaskName = "RyzenSDT";
+
+        // One connection/query for initial checkbox and profile selection.
+        public static StartupTaskState ReadState()
+        {
+            using (var service = new TaskService())
+            using (var task = service.GetTask(TaskName)) {
+                var exec = task?.Definition.Actions.OfType<ExecAction>().FirstOrDefault();
+                string arguments = exec?.Arguments ?? "";
+                int index = arguments.IndexOf("--applyprofile", StringComparison.OrdinalIgnoreCase);
+                string name = index < 0 ? null : arguments.Substring(index + "--applyprofile".Length).Trim().Trim('"');
+                return new StartupTaskState(task != null, string.IsNullOrEmpty(name) ? null : name);
+            }
+        }
 
         public static bool Exists()
         {

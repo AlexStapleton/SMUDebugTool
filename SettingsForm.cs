@@ -304,6 +304,7 @@ namespace ZenStatesDebugTool
             var tools = new ToolStripMenuItem("Tools");
             tools.DropDownItems.Add("CO optimizer", null, (sender, args) => ShowNativeWorkbench());
             tools.DropDownItems.Add("CPU overview and capabilities", null, (sender, args) => ShowCpuOverview());
+            tools.DropDownItems.Add("Startup timings", null, (sender, args) => ShowResultForm("Startup timings", StartupTimings.Current.Report()));
             tools.DropDownItems.Add("Driver diagnostics and maintenance", null, (sender, args) =>
             {
                 var environment = new WindowsDriverMaintenanceEnvironment { LocalHandleOpen = !Hardware.IsClosing };
@@ -356,8 +357,8 @@ namespace ZenStatesDebugTool
         }
 
         // The window is shown before the deferred SMU refreshes; once it's visible (handle
-        // created, so Invoke works) we kick off a one-time background load that gathers all
-        // the slow hardware/WMI values off the UI thread and applies them in one marshal.
+        // created, so Invoke works) load tuning values. Optional tabs discover their own
+        // data on demand and never hold the tuning-ready gate.
         private bool _hardwareLoaded;
         // True once the background load has applied values. The CO/CS Apply handlers check
         // this so a click during the brief load can't write default (0) margins to the CPU.
@@ -367,6 +368,8 @@ namespace ZenStatesDebugTool
             base.OnShown(e);
             if (_hardwareLoaded || cpu == null || shutdownComplete || shuttingDown) return;
             _hardwareLoaded = true;
+            StartupTimings.Current.Mark("Main window shown");
+            LoadStartupTaskState();
             StartHardwareLoad();
         }
 
@@ -374,14 +377,13 @@ namespace ZenStatesDebugTool
         {
             var loader = new Thread(() =>
             {
+                var timing = StartupTimings.Current.Measure("Essential tuning reads");
                 try
                 {
                     bool manualOc = Hardware.Locked(() => cpu.smu.Rsmu.SMU_MSG_IsOverclockable == 0
                         || cpu.GetOverclockingCaps()[OcCapabilities.OverclockingEnabled]);
-                    var pstateItems = GatherPStates();
-                    UiInvoke(() => ApplyPStateList(pstateItems));
 
-                    // Reads only (cpu/WMI), no control access — safe off the UI thread.
+                    // CPU reads only, no control access — safe off the UI thread.
                     // The SMU/CPU reads are serialized against other threads via
                     // Hardware.Sync; the UI apply happens later (UiInvoke) outside the lock.
                     Dictionary<int, int> coMargins;
@@ -401,9 +403,7 @@ namespace ZenStatesDebugTool
                         bclk = cpu.GetBclk();
                         prochot = cpu.IsProchotEnabled();
                     }
-                    List<object> wmiItems = GatherWmiCommands();
-
-                    // Apply everything to the controls in a single UI-thread marshal.
+                    // Publish tuning readiness before any optional tab discovery.
                     UiInvoke(() =>
                     {
                         try
@@ -421,14 +421,17 @@ namespace ZenStatesDebugTool
                             ApplyCurveShaperValues(CurveShaperCodec.ResolveDisplay(csValues, _lastAppliedCurveShaper), false, !CurveShaperCodec.IsAllZero(csValues));
                             ApplyBclk(bclk);
                             ApplyProchot(prochot);
-                            ApplyWmiCommands(wmiItems);
                             _hardwareReady = true;
                             editControls?.Refresh();
                             SetStatusText(hardware.Topology.Error == null ? $"{cpu.info.codeName}. Ready." : $"Ready. Per-core controls unavailable: {hardware.Topology.Error}");
+                            StartupTimings.Current.Mark("Tuning controls ready");
+                            LoadSelectedHardwareTab();
+                            _ = StartupTimings.Current.PersistAsync();
                         }
                         catch (Exception ex)
                         {
-                            _hardwareReady = true; // unblock the gated controls regardless
+                            _hardwareReady = false; // never enable writes with partially applied startup values
+                            StartupTimings.Current.Mark("Tuning UI initialization failed");
                             editControls?.Refresh();
                             SetStatusText($"Hardware load applied with errors: {ex.Message}");
                         }
@@ -436,8 +439,10 @@ namespace ZenStatesDebugTool
                 }
                 catch (Exception ex)
                 {
+                    StartupTimings.Current.Mark("Essential tuning load failed");
                     UiInvoke(() => SetStatusText($"Hardware load error: {ex.Message}"));
                 }
+                finally { timing.Dispose(); _ = StartupTimings.Current.PersistAsync(); }
             })
             {
                 IsBackground = true,
@@ -646,26 +651,9 @@ namespace ZenStatesDebugTool
 
         private void InitStartupProfileUi()
         {
-            _suppressStartupTaskUpdates = true;
-            try
-            {
-                checkBoxApplyCOStartup.Checked = StartupTaskService.Exists();
-
-                if (comboBoxStartupProfile == null) return;
-
-                comboBoxStartupProfile.Items.Clear();
-                foreach (var n in profileManager.List())
-                    comboBoxStartupProfile.Items.Add(n);
-                string startupName = StartupTaskService.GetProfileName();
-                if (startupName != null && comboBoxStartupProfile.Items.Contains(startupName))
-                    comboBoxStartupProfile.SelectedItem = startupName;
-                else if (comboBoxStartupProfile.Items.Count > 0)
-                    comboBoxStartupProfile.SelectedIndex = 0;
-            }
-            finally
-            {
-                _suppressStartupTaskUpdates = false;
-            }
+            // Read Task Scheduler after the window is visible, with handlers suppressed.
+            checkBoxApplyCOStartup.Enabled = false;
+            if (comboBoxStartupProfile != null) comboBoxStartupProfile.Enabled = false;
         }
 
         private void InitPboLayout()
@@ -2035,6 +2023,7 @@ namespace ZenStatesDebugTool
                 splitContainer1.Panel2Collapsed = true;
             else if (splitContainer1.Panel2Collapsed)
                 splitContainer1.Panel2Collapsed = false;
+            LoadSelectedHardwareTab();
         }
 
         public string GenerateReportJson()
@@ -3122,6 +3111,7 @@ namespace ZenStatesDebugTool
         {
             try
             {
+                if (!await RequireWmiReadyAsync()) return;
                 if (hardware.Topology.Error != null || hardware.Topology.Targets.Any(t => t.Ccd > 1)) { SetStatusText("Downcore controls support only a validated one/two-CCD map."); return; }
                 uint smt = checkBoxSMT.Checked ? 1U : 0U;
                 uint ccd0 = 0x8000;
@@ -3182,6 +3172,7 @@ namespace ZenStatesDebugTool
         {
             try
             {
+                if (!await RequireWmiReadyAsync()) return;
                 if (hardware.Topology.Error != null || !hardware.Topology.Targets.Any(t => t.Ccd == 0) || !hardware.Topology.Targets.Any(t => t.Ccd == 1) || hardware.Topology.Targets.Any(t => t.Ccd > 1)) { SetStatusText("This preset requires a validated two-CCD map."); return; }
                 var cmdItem = comboBoxAvailableCommands.Items
                          .OfType<WmiCmdListItem>()
@@ -3212,6 +3203,7 @@ namespace ZenStatesDebugTool
         {
             try
             {
+                if (!await RequireWmiReadyAsync()) return;
                 if (hardware.Topology.Error != null || !hardware.Topology.Targets.Any(t => t.Ccd == 0) || !hardware.Topology.Targets.Any(t => t.Ccd == 1) || hardware.Topology.Targets.Any(t => t.Ccd > 1)) { SetStatusText("This preset requires a validated two-CCD map."); return; }
                 var cmdItem = comboBoxAvailableCommands.Items
                          .OfType<WmiCmdListItem>()

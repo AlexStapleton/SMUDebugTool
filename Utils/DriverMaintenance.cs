@@ -98,13 +98,19 @@ namespace ZenStatesDebugTool
                 using (EnterGate())
                 {
                     var environment = new WindowsDriverMaintenanceEnvironment();
-                    var before = environment.Inspect();
-                    var cpu = CoreLibraryAdapter.CreateCpu(progress);
-                    try { environment.RecordNewInstallation(before.Error == null && !before.Present); } catch { }
-                    return cpu;
+                    return CreateWithOwnership(environment.IsServicePresent,
+                        () => CoreLibraryAdapter.CreateCpu(progress), environment.RecordNewInstallation);
                 }
             }
             catch { session.Dispose(); session = null; throw; }
+        }
+        internal static T CreateWithOwnership<T>(Func<bool> servicePresent, Func<T> create, Action<bool> recordNew)
+        {
+            bool? present = null;
+            try { present = servicePresent(); } catch { /* Unknown never establishes ownership. */ }
+            T result = create();
+            if (present == false) try { recordNew(true); } catch { /* Ownership is optional; initialization is not. */ }
+            return result;
         }
         public void Dispose() => marker.Dispose();
         private sealed class GateScope : IDisposable
@@ -120,7 +126,12 @@ namespace ZenStatesDebugTool
         private const string OwnershipKey = @"SOFTWARE\AlexStapleton\SMUDebugTool\DriverOwnership";
         public bool LocalHandleOpen { get; set; }
         public IDisposable EnterMaintenance() => DriverSession.EnterGate();
-        public DriverStateSnapshot Inspect()
+        internal bool IsServicePresent()
+        {
+            using (var key = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\" + Service)) return key != null;
+        }
+        public DriverStateSnapshot Inspect() => Inspect(true);
+        private DriverStateSnapshot Inspect(bool includeConsumers)
         {
             var state = new DriverStateSnapshot
             {
@@ -146,7 +157,7 @@ namespace ZenStatesDebugTool
                 using (var marker = Registry.LocalMachine.OpenSubKey(OwnershipKey))
                     state.OwnershipEstablished = state.Hash != null && state.Hash == marker?.GetValue("Sha256") as string
                         && string.Equals(state.Path, marker?.GetValue("Path") as string, StringComparison.OrdinalIgnoreCase);
-                using (var current = Process.GetCurrentProcess())
+                if (includeConsumers) using (var current = Process.GetCurrentProcess())
                     foreach (var process in Process.GetProcesses())
                         using (process)
                         {
@@ -166,7 +177,7 @@ namespace ZenStatesDebugTool
         public void RecordNewInstallation(bool wasAbsent)
         {
             if (!wasAbsent) return;
-            var state = Inspect();
+            var state = Inspect(false);
             if (state.Error != null || !state.Present || state.Hash == null || !string.Equals(state.Path, state.ExpectedPath, StringComparison.OrdinalIgnoreCase)) return;
             using (var marker = Registry.LocalMachine.CreateSubKey(OwnershipKey))
             { marker.SetValue("Path", state.Path); marker.SetValue("Sha256", state.Hash); }
