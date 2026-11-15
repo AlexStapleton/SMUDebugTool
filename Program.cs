@@ -13,6 +13,7 @@ namespace ZenStatesDebugTool
         [STAThread]
         static void Main()
         {
+            StartupTimings.Current.Mark("Program entry");
             string[] args = Environment.GetCommandLineArgs();
 
             // A single scan decides both whether the flag is present and which

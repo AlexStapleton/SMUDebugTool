@@ -9,12 +9,14 @@ namespace ZenStatesDebugTool
     public static class CoreLibraryAdapter
     {
         public const string SourceRevision = "3bb1dad5b6cccc14f063d6eacbcf891a309944f3";
-        public static CoreOptions CreateOptions(Action<string> progress = null) => new CoreOptions
+        // This application uses native CPU/SMU telemetry, not the core's DIMM/SPD,
+        // AOD-table or SuperIO inventory. Future inventory views can request them explicitly.
+        public static CoreOptions CreateOptions(Action<string> progress = null, bool includeOptionalInventory = false) => new CoreOptions
         {
             InitProgress = progress,
-            Timings = new CoreOptions.ModuleSettings { Enabled = true, Autorefresh = false },
-            Sensors = new CoreOptions.ModuleSettings { Enabled = true, Autorefresh = false },
-            Aod = new CoreOptions.ModuleSettings { Enabled = true, Autorefresh = false },
+            Timings = new CoreOptions.ModuleSettings { Enabled = includeOptionalInventory, Autorefresh = false },
+            Sensors = new CoreOptions.ModuleSettings { Enabled = includeOptionalInventory, Autorefresh = false },
+            Aod = new CoreOptions.ModuleSettings { Enabled = includeOptionalInventory, Autorefresh = false },
             Wmi = new CoreOptions.ModuleSettings { Enabled = true, Autorefresh = false },
             IoModule = new CoreOptions.ModuleSettings { Enabled = true, Autorefresh = false }
         };

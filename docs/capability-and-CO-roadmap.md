@@ -73,6 +73,14 @@ Validation record: Release build passed with zero warnings/errors; **414 app tes
 - Validation: Release build has zero warnings/errors; **510 hardware-free app tests**, **9 upstream-bot tests** and package success/failure checks passed. Coverage includes full phase flow, bounds, settling exclusion, late failures, cancellation, per-core-target resume, recovery and profile isolation. Normal/doubled-font synthetic views were inspected and clipping corrected. Exact-head CI evidence is recorded with the PR. No live CPU writes or real benchmark ran during development.
 - Remaining acceptance: physical/native VID agreement, firmware CO response, temperature/event availability, real Cinebench output/load, overhead and monitor DPI. Equal requested VID and completed renders do not prove stability; correctness, idle/transition validation, long-duration testing and WHEA attribution remain open.
 
+### Change log — 14 November 2026, startup performance follow-up
+
+- Removed the full driver-maintenance hash/process audit from normal startup. Preserve maintenance serialization and unknown/existing/new-installation ownership rules; diagnostics/removal retain full checks.
+- The pinned `net48-compat2` build now honors existing inventory-module switches. Skip unused DIMM/SPD, AOD-table and SuperIO scans; preserve APOB/core targeting, CPU temperature, identity and power-table/SVI3 telemetry. Upstream source/revision remain unchanged; explicit full-inventory options remain available for future consumers.
+- Publish tuning readiness before optional P-state or AMD ACPI discovery; load those when their tab or a dependent CPU firmware action is used. Coalesce repeated requests and discard results after close. Read startup-task presence/profile through one background connection, with UI handlers suppressed and controls gated until observed state arrives.
+- Added **Tools → Startup timings** and a bounded atomic local report separating window/tuning milestones and stage durations. No hardware identifiers or tuning values enter that report. See [startup behavior and acceptance](startup-performance.md).
+- Release build: zero warnings/errors; **520 hardware-free app tests**, **9 bot tests**, and package success/failure checks passed. Runtime timing, native mapping/telemetry and lazy-tab acceptance on the user's machine remain pending. No live CPU initialization, tuning writes, real workload or startup-task mutation ran during development. No numeric speedup is claimed from synthetic tests.
+
 ## Product goal
 
 Help a user answer three questions: what can this machine do, what actually changed, and did that change improve the workload they care about?

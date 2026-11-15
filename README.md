@@ -14,6 +14,10 @@ incidents. There is no HWiNFO or CSV dependency. Equal requested VID does not pr
 stability. See the [guided optimizer guide](docs/guided-co-optimizer.md) and
 [v1.52.0 notes](docs/release-notes-1.52.0.md) for its scope and hardware acceptance gates.
 
+Startup now skips unused inventory scans and loads P-state/AMD ACPI data on demand.
+**Tools → Startup timings** separates window visibility from tuning readiness;
+see [startup performance and measurement](docs/startup-performance.md).
+
 ### Build and package this fork
 
 Windows x64, .NET Framework 4.8 and the .NET SDK specified in `global.json` are required.

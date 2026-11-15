@@ -680,4 +680,5 @@
   <data name="Validate current candidate" xml:space="preserve"><value>Validate current candidate</value></data>
   <data name="Validate fixed candidate" xml:space="preserve"><value>Validate fixed candidate</value></data>
   <data name="Validating fixed offsets" xml:space="preserve"><value>Validating fixed offsets</value></data>
+  <data name="Startup timings" xml:space="preserve"><value>Startup timings</value></data>
 </root>

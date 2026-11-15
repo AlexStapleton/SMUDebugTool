@@ -680,4 +680,5 @@
   <data name="Validate current candidate" xml:space="preserve"><value>验证当前候选</value></data>
   <data name="Validate fixed candidate" xml:space="preserve"><value>验证固定候选偏移</value></data>
   <data name="Validating fixed offsets" xml:space="preserve"><value>验证固定偏移</value></data>
+  <data name="Startup timings" xml:space="preserve"><value>启动耗时</value></data>
 </root>

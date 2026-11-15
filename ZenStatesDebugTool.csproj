@@ -207,6 +207,8 @@
       <DependentUpon>SettingsForm.cs</DependentUpon>
     </Compile>
     <Compile Include="Program.cs" />
+    <Compile Include="Utils\StartupWork.cs" />
+    <Compile Include="SettingsForm.Startup.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <EmbeddedResource Include="PCIRangeMonitor.resx">
       <DependentUpon>PCIRangeMonitor.cs</DependentUpon>

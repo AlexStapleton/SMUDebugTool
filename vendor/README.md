@@ -9,8 +9,15 @@ and the embedded PawnIO payloads. It does not run upstream's native-file copy
 commands or include additional WinIo drivers. The app continues to provide its
 existing, hash-verified x64 InpOut DLL.
 
-Prepare-Core verifies the source revision and clean tracked files, then changes
-only Cpu's declaration to partial in the intermediate build directory.
+Prepare-Core verifies the source revision and clean tracked files, then makes
+Cpu partial and applies the small `net48-compat2` module-option guards to copied
+Cpu/SystemInfo sources in the intermediate build directory. Every replacement
+requires exactly one matching source marker; upstream files stay unchanged.
+The guards honor `Timings.Enabled`, `Aod.Enabled` and `Sensors.Enabled` for DIMM/SPD,
+AOD-table, SMBus-module and SuperIO inventory. This application disables that unused
+inventory; `CoreLibraryAdapter.CreateOptions(includeOptionalInventory: true)` retains
+the complete discovery path for future inventory consumers. APOB core-map parsing,
+SMBIOS identity, CPU temperature and power-table/SVI3 access remain initialized.
 CoreCurrentProcessor adds public current-processor MSR operations on the existing
 driver, avoiding private-field reflection and broadcast writes in the P-state
 transaction. Its caller retains checked processor affinity and register-field
