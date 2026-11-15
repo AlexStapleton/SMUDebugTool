@@ -8,7 +8,7 @@ This began as an implementation plan; the tracker below records delivered code s
 
 ## Living implementation tracker
 
-Updated 14 November 2026. This document is now both the design and the change tracker. The preparation note above describes the original plan; implementation begins below. **Implemented** means the code and automated checks are delivered, not that a real BIOS has been tested. Update this table and the dated change log in each roadmap PR. Canonical repository path: `docs/capability-and-CO-roadmap.md`; the chat's output document mirrors it. The overview/native/managed milestones shipped in [v1.51.0](https://github.com/AlexStapleton/SMUDebugTool/releases/tag/v1.51.0) through PR #22. The guided milestone below targets v1.52.0 and remains under review.
+Updated 15 November 2026. This document is now both the design and the change tracker. The preparation note above describes the original plan; implementation begins below. **Implemented** means the code and automated checks are delivered, not that a real BIOS has been tested. Update this table and the dated change log in each roadmap PR. Canonical repository path: `docs/capability-and-CO-roadmap.md`; the chat's output document mirrors it. The overview/native/managed milestones shipped in [v1.51.0](https://github.com/AlexStapleton/SMUDebugTool/releases/tag/v1.51.0) through PR #22. The guided, startup and performance milestones below target v1.52.0 and remain under review.
 
 | Area | Current status | Delivered / remaining |
 | --- | --- | --- |
@@ -80,6 +80,15 @@ Validation record: Release build passed with zero warnings/errors; **414 app tes
 - Publish tuning readiness before optional P-state or AMD ACPI discovery; load those when their tab or a dependent CPU firmware action is used. Coalesce repeated requests and discard results after close. Read startup-task presence/profile through one background connection, with UI handlers suppressed and controls gated until observed state arrives.
 - Added **Tools → Startup timings** and a bounded atomic local report separating window/tuning milestones and stage durations. No hardware identifiers or tuning values enter that report. See [startup behavior and acceptance](startup-performance.md).
 - Release build: zero warnings/errors; **520 hardware-free app tests**, **9 bot tests**, and package success/failure checks passed. Runtime timing, native mapping/telemetry and lazy-tab acceptance on the user's machine remain pending. No live CPU initialization, tuning writes, real workload or startup-task mutation ran during development. No numeric speedup is claimed from synthetic tests.
+
+### Change log — 15 November 2026, application performance audit
+
+- Added a [deep performance audit and follow-up priorities](performance-audit-2026-11-15.md), retained before/after measurements with binary hashes and a reproducible hardware-free probe. Three sequential process runs per CPU/UI case retain timing ranges; no whole-program or Cinebench speedup is claimed.
+- Replace repeated optimizer grid rebinding with stable keyed rows and changed-cell updates; preserve scroll/selection, size displayed rows, keep unchanged report text and skip minimized presentation. Move periodic recovery display probes off the UI thread; real action/interlock checks remain authoritative.
+- Share immutable telemetry snapshots, aggregate eligibility in one pass and index active-core summaries. Avoid full run-history clones for count/change checks. Freshness, physical mapping, median/threshold rules and trial journal durability remain intact.
+- Split independent diagnostic reads into cooperative lock windows; drop incomplete busy PCI-monitor passes, avoid unchanged-frame resets, cache PM layout metadata and refresh changed rows. SMU transactions and native acquisition retain their required serialization.
+- Stream detached report snapshots once with a UTF-8 size limit and atomic replacement, preserving existing reports on failure. Tests cover snapshot isolation, stale cached input, 160 differential eligibility windows, UI row/selection retention, scan cancellation/contention and export bounds.
+- Validation: Release build has zero warnings/errors; **530 app tests**, **9 bot tests** and package success/failure checks pass. Normal/doubled-font synthetic views inspected. Runtime driver latency, actual observer overhead, scan/monitor firmware behavior and workload outcomes remain hardware acceptance items.
 
 ## Product goal
 

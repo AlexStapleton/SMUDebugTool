@@ -24,28 +24,60 @@ namespace ZenStatesDebugTool
         public string StopReason { get; }
         private CoEligibility(List<CoCoreEvidence> cores, CoStepProposal proposal, string stop)
         { Cores = cores.AsReadOnly(); Proposal = proposal; StopReason = stop; }
+        private sealed class WindowStats
+        {
+            public int Count, Ccd;
+            public long First = long.MaxValue;
+            public CoreVidReading Last;
+            public bool Invalid, MixedCcd, Inactive;
+            public decimal VidSum, MhzSum, MinMhz = decimal.MaxValue, MaxMhz = decimal.MinValue;
+            public void Add(CoreVidReading value)
+            {
+                if (Count == 0) Ccd = value.Ccd;
+                Count++; First = Math.Min(First, value.Timestamp);
+                if (Last == null || value.Timestamp >= Last.Timestamp) Last = value;
+                MixedCcd |= value.Ccd != Ccd;
+                Invalid |= value.Issue != null || !value.VidVolts.HasValue || !value.ReportedMhz.HasValue;
+                Inactive |= !value.Busy;
+                VidSum += value.VidVolts ?? 0;
+                decimal mhz = value.ReportedMhz ?? 0; MhzSum += mhz; MinMhz = Math.Min(MinMhz, mhz); MaxMhz = Math.Max(MaxMhz, mhz);
+            }
+        }
         public static CoEligibility Analyze(IEnumerable<CoreVidReading> readings, IReadOnlyDictionary<int, int> offsets, int bound, long now, ISet<int> responseBlocked = null)
         {
             if (bound < -999 || bound >= 0) throw new ArgumentOutOfRangeException(nameof(bound));
-            var groups = readings.Where(r => now >= r.Timestamp && (now - r.Timestamp) / (double)Stopwatch.Frequency <= 5).GroupBy(r => r.Slot).ToDictionary(g => g.Key, g => g.OrderBy(r => r.Timestamp).ToArray());
-            var rows = new List<CoCoreEvidence>(); bool incomplete = groups.Keys.Any(k => !offsets.ContainsKey(k));
+            // Timestamp extrema and one pass preserve the contract for shuffled input;
+            // sorting/copying every core's entire window is unnecessary.
+            var groups = new Dictionary<int, WindowStats>();
+            foreach (var reading in readings) {
+                if (reading.Timestamp > now || (now - reading.Timestamp) / (double)Stopwatch.Frequency > 5) continue;
+                if (!groups.TryGetValue(reading.Slot, out var stats)) groups.Add(reading.Slot, stats = new WindowStats());
+                stats.Add(reading);
+            }
+            var rows = new List<CoCoreEvidence>(offsets.Count); bool incomplete = groups.Keys.Any(k => !offsets.ContainsKey(k));
+            var comparable = new Dictionary<int, List<CoCoreEvidence>>();
             foreach (int slot in offsets.Keys.OrderBy(k => k)) {
                 var row = new CoCoreEvidence { Slot = slot, Co = offsets[slot] }; rows.Add(row);
-                if (!groups.TryGetValue(slot, out var values) || values.Length == 0) { row.Reason = "Waiting for native samples"; incomplete = true; continue; }
-                var last = values.Last(); row.Ccd = last.Ccd; row.Samples = values.Length;
+                if (!groups.TryGetValue(slot, out var values)) { row.Reason = "Waiting for native samples"; incomplete = true; continue; }
+                var last = values.Last; row.Ccd = last.Ccd; row.Samples = values.Count;
                 if ((now - last.Timestamp) / (double)Stopwatch.Frequency > .5 || last.Issue != null) { row.Reason = "Stale or unavailable native reading"; incomplete = true; continue; }
-                if (values.Length < 20 || (last.Timestamp - values[0].Timestamp) / (double)Stopwatch.Frequency < 2) { row.Reason = "Collecting a comparable window"; continue; }
-                if (values.Any(v => v.Issue != null || !v.VidVolts.HasValue || !v.ReportedMhz.HasValue || v.Ccd != last.Ccd)) { row.Reason = "Discarding transition / invalid samples"; continue; }
-                if (values.Any(v => !v.Busy)) { row.Reason = "Insufficient sustained activity"; continue; }
+                if (values.Count < 20 || (last.Timestamp - values.First) / (double)Stopwatch.Frequency < 2) { row.Reason = "Collecting a comparable window"; continue; }
+                if (values.Invalid || values.MixedCcd) { row.Reason = "Discarding transition / invalid samples"; continue; }
+                if (values.Inactive) { row.Reason = "Insufficient sustained activity"; continue; }
                 if (row.Co < -999 || row.Co > 999) { row.Reason = "CO readback outside supported range"; incomplete = true; continue; }
-                row.Mhz = values.Average(v => v.ReportedMhz.Value); row.Vid = values.Average(v => v.VidVolts.Value);
-                if (values.Max(v => v.ReportedMhz.Value) - values.Min(v => v.ReportedMhz.Value) > row.Mhz * .03m) { row.Reason = "Reported clock is changing"; continue; }
+                row.Mhz = values.MhzSum / values.Count; row.Vid = values.VidSum / values.Count;
+                if (values.MaxMhz - values.MinMhz > row.Mhz * .03m) { row.Reason = "Reported clock is changing"; continue; }
                 row.Comparable = true;
+                if (!comparable.TryGetValue(row.Ccd, out var ccd)) comparable.Add(row.Ccd, ccd = new List<CoCoreEvidence>());
+                ccd.Add(row);
             }
+            var peers = new List<decimal>();
             foreach (var row in rows.Where(r => r.Comparable)) {
-                var peers = rows.Where(p => p.Comparable && p.Slot != row.Slot && p.Ccd == row.Ccd && Math.Abs(p.Mhz.Value - row.Mhz.Value) <= row.Mhz * .03m).Select(p => p.Vid.Value).OrderBy(v => v).ToArray();
-                if (peers.Length < 2) { row.Reason = "Need two comparable peers in this CCD"; continue; }
-                row.PeerMedian = peers.Length % 2 == 0 ? (peers[peers.Length / 2 - 1] + peers[peers.Length / 2]) / 2 : peers[peers.Length / 2];
+                peers.Clear();
+                foreach (var peer in comparable[row.Ccd]) if (peer.Slot != row.Slot && Math.Abs(peer.Mhz.Value - row.Mhz.Value) <= row.Mhz * .03m) peers.Add(peer.Vid.Value);
+                if (peers.Count < 2) { row.Reason = "Need two comparable peers in this CCD"; continue; }
+                peers.Sort();
+                row.PeerMedian = peers.Count % 2 == 0 ? (peers[peers.Count / 2 - 1] + peers[peers.Count / 2]) / 2 : peers[peers.Count / 2];
                 row.Reason = responseBlocked?.Contains(row.Slot) == true ? "No reproducible response; review before further changes" : row.Co > 0 ? "Positive CO requires a new reference" : row.Co - 1 < bound ? "Negative bound reached" : row.Vid - row.PeerMedian < .0125m ? "Within measured VID tolerance" : "Eligible for one negative step";
             }
             var target = incomplete ? null : rows.Where(r => r.Reason == "Eligible for one negative step").OrderByDescending(r => r.Vid).ThenBy(r => r.Slot).FirstOrDefault();

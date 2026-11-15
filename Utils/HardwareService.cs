@@ -140,17 +140,15 @@ namespace ZenStatesDebugTool
             return Hardware.Locked(() => cpu.WriteMsr(msr, eax, edx));
         }
 
-        // Reads start..end inclusive under a single lock; returns only successful reads.
+        // Reads start..end inclusive; release the driver between independent registers.
         // Preserves the original scan loop semantics (while msr <= end; msr++).
         public List<MsrReading> ScanMsrRange(uint start, uint end)
         {
             if (end < start || (ulong)end - start >= 65536) throw new ArgumentException("Scan 1–65536 MSRs at a time.");
             var readings = new List<MsrReading>();
-            lock (Hardware.Sync)
+            for (ulong address = start; address <= end; address++)
             {
-                Hardware.ThrowIfClosing();
-                for (ulong address = start; address <= end; address++)
-                {
+                lock (Hardware.Sync) {
                     Hardware.ThrowIfClosing();
                     uint msr = (uint)address;
                     uint eax = 0, edx = 0;
@@ -158,6 +156,7 @@ namespace ZenStatesDebugTool
                         readings.Add(new MsrReading(msr, eax, edx));
 
                 }
+                if ((address - start + 1) % 64 == 0) Thread.Yield();
             }
             return readings;
         }

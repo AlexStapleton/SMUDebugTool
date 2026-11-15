@@ -272,7 +272,7 @@ namespace ZenStatesDebugTool
         }
         private async Task CohortAsync(string role, List<decimal> scores, CancellationToken ct)
         {
-            if (records.Trials.Count + (options.Repeats - scores.Count) > 100) throw new InvalidOperationException("Session history is full; export and finish this session.");
+            if (records.TrialCount + (options.Repeats - scores.Count) > 100) throw new InvalidOperationException("Session history is full; export and finish this session.");
             var run = new ManagedCoRun(records, services.Runner, services.Capture, services.ApplyBatch, services.Recovery, () => clock.UtcNow);
             while (scores.Count < options.Repeats) {
                 await CheckContextAsync(ct); Status = (role == "Baseline" ? "Reference" : "Candidate") + " fixed-offset run " + (scores.Count + 1) + " / " + options.Repeats;

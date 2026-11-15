@@ -63,13 +63,22 @@ namespace ZenStatesDebugTool
         }
         private void Write()
         {
-            var json = Export();
+            // Caller holds gate. Keep intent durability synchronous before each setter.
+            var json = JsonConvert.SerializeObject(CurrentDocument(entries), Formatting.Indented);
             if (Encoding.UTF8.GetByteCount(json) > 8 * 1024 * 1024) throw new InvalidOperationException("Trial journal reached its 8 MiB limit; no new write permitted.");
             Directory.CreateDirectory(Path.GetDirectoryName(path)); string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
             try { File.WriteAllText(temporary, json, new UTF8Encoding(false)); if (File.Exists(path)) File.Replace(temporary, path, null); else File.Move(temporary, path); }
             finally { if (File.Exists(temporary)) File.Delete(temporary); }
         }
         public string Export()
-        { lock (gate) return JsonConvert.SerializeObject(new { SchemaVersion = 1, Hardware = hardware, Topology = topology, Configuration = configuration, Phase = phase, Entries = entries }, Formatting.Indented); }
+        { return JsonConvert.SerializeObject(ExportSnapshot(), Formatting.Indented); }
+        private object CurrentDocument(IEnumerable<CoTrialEntry> snapshot) => new { SchemaVersion = 1, Hardware = hardware, Topology = topology, Configuration = configuration, Phase = phase, Entries = snapshot };
+        public object ExportSnapshot()
+        {
+            lock (gate) return CurrentDocument(entries.Select(e => new CoTrialEntry {
+                Sequence = e.Sequence, StartedUtc = e.StartedUtc, Action = e.Action, Before = new Dictionary<int, int>(e.Before), Requested = new Dictionary<int, int>(e.Requested),
+                Outcome = e.Outcome, Evidence = e.Evidence, Selection = e.Selection
+            }).ToArray());
+        }
     }
 }

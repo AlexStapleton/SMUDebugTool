@@ -33,6 +33,7 @@ namespace ZenStatesDebugTool
             InitializeComponent();
             UiLayout.Configure(this, new System.Drawing.Size(500, 300));
             dataGridViewPCIRange.DataSource = list;
+            dataGridViewPCIRange.Columns[0].AutoSizeMode = DataGridViewAutoSizeColumnMode.DisplayedCells;
             RefreshTimer.Interval = 500;
             RefreshTimer.Tick += RefreshTimer_Tick;
         }
@@ -52,33 +53,27 @@ namespace ZenStatesDebugTool
             {
                 var current = await Task.Run(() =>
                 {
-                    uint[] values;
-                    return Hardware.TryRead(() =>
-                    {
-                        var snapshot = new uint[addresses.Length];
-                        for (int i = 0; i < addresses.Length; i++)
-                        {
-                            if (closing || Hardware.IsClosing) return null;
-                            CPU.ReadDwordEx(addresses[i], ref snapshot[i]);
-                        }
-                        return snapshot;
-                    }, out values) ? values : null;
+                    uint[] snapshot = null;
+                    bool complete = CooperativeScan.ReadBatches(addresses.Length, 64, i => {
+                        if (closing) throw new OperationCanceledException();
+                        if (snapshot == null) snapshot = new uint[addresses.Length];
+                        CPU.ReadDwordEx(addresses[i], ref snapshot[i]);
+                    }, batch => Hardware.TryRead(() => { batch(); return true; }, out bool _), Hardware.ClosingToken);
+                    return complete ? snapshot : null;
                 });
                 if (closing || IsDisposed || current == null) return;
+                var changed = new List<int>(); bool initial = previous == null;
                 list.RaiseListChangedEvents = false;
-                if (previous == null)
-                    for (int i = 0; i < current.Length; i++) list.Add(MakeItem(addresses[i], current[i]));
-                else
-                    for (int i = 0; i < current.Length; i++)
-                        if (current[i] != previous[i])
-                        {
-                            list[i] = MakeItem(addresses[i], current[i]);
-                            changedRows.Add(i);
-                        }
+                try {
+                    if (initial) for (int i = 0; i < current.Length; i++) list.Add(MakeItem(addresses[i], current[i]));
+                    else for (int i = 0; i < current.Length; i++) if (current[i] != previous[i]) {
+                        list[i] = MakeItem(addresses[i], current[i]); changedRows.Add(i); changed.Add(i);
+                    }
+                } finally { list.RaiseListChangedEvents = true; }
                 previous = current;
-                list.RaiseListChangedEvents = true;
-                list.ResetBindings();
-                foreach (int index in changedRows)
+                if (initial || changed.Count > 64) list.ResetBindings();
+                else foreach (int index in changed) list.ResetItem(index);
+                foreach (int index in changed.Count > 64 ? changedRows : (IEnumerable<int>)changed)
                     dataGridViewPCIRange.Rows[index].DefaultCellStyle.BackColor = System.Drawing.Color.LightGoldenrodYellow;
             }
             catch (Exception ex) { if (!closing) Text = "PCI Range Monitor — " + ex.Message; }

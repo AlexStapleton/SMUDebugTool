@@ -19,6 +19,8 @@ namespace ZenStatesDebugTool
         // formatted Max string back into a number. Index-aligned with `list`.
         private float[] maxes;
         private IReadOnlyDictionary<uint, SensorInfo> structure;
+        private float[] previous;
+        private uint? structureVersion;
         private class PowerMonitorItem
         {
             public string Index { get; set; }
@@ -60,6 +62,7 @@ namespace ZenStatesDebugTool
             }
             list.RaiseListChangedEvents = true;
             list.ResetBindings();
+            previous = table;
         }
 
         private void RefreshData(float[] table)
@@ -67,6 +70,7 @@ namespace ZenStatesDebugTool
             for (int index = 0; index < list.Count; index++)
             {
                 var current = table[index];
+                if (previous != null && current.Equals(previous[index])) continue;
                 var item = list[index];
 
                 // Current value is (re)formatted each tick; one float format is cheap.
@@ -81,9 +85,9 @@ namespace ZenStatesDebugTool
                     maxes[index] = current;
                     item.Max = item.Value;
                 }
+                dataGridView1.InvalidateRow(index);
             }
-
-            dataGridView1.Refresh();
+            previous = table;
         }
 
         private bool refreshing;
@@ -94,18 +98,22 @@ namespace ZenStatesDebugTool
             refreshing = true;
             try
             {
+                bool layoutChanged = false;
                 float[] snapshot = await Task.Run(() =>
                 {
                     float[] values;
                     return Hardware.TryRead(() =>
                     {
                         if (CPU.RefreshPowerTable() != SMU.Status.OK) return null;
-                        structure = SmuDecodeAdapter.GetPmTableStructure(CPU);
+                        uint version = CPU.RyzenSmu.PmTableVersion;
+                        if (structureVersion != version || previous == null || previous.Length != CPU.powerTable.Table.Length) {
+                            structure = SmuDecodeAdapter.GetPmTableStructure(CPU); structureVersion = version; layoutChanged = true;
+                        }
                         return (float[])CPU.powerTable.Table.Clone();
                     }, out values) ? values : null;
                 });
                 if (closing || IsDisposed || snapshot == null) return;
-                if (list.Count != snapshot.Length) FillInData(snapshot);
+                if (list.Count != snapshot.Length || layoutChanged) FillInData(snapshot);
                 else RefreshData(snapshot);
                 Text = $"PowerTableMonitor — PM table 0x{CPU.RyzenSmu.PmTableVersion:X} ({structure?.Count ?? 0} labels)";
             }

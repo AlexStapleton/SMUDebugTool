@@ -208,6 +208,9 @@
     </Compile>
     <Compile Include="Program.cs" />
     <Compile Include="Utils\StartupWork.cs" />
+    <Compile Include="Utils\LiveDisplay.cs" />
+    <Compile Include="Utils\CooperativeScan.cs" />
+    <Compile Include="Utils\AtomicJsonExport.cs" />
     <Compile Include="SettingsForm.Startup.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <EmbeddedResource Include="PCIRangeMonitor.resx">

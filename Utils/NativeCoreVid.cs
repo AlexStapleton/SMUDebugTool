@@ -152,13 +152,14 @@ namespace ZenStatesDebugTool
     public sealed class CoreVidWindow
     {
         private readonly Queue<CoreVidReading> values = new Queue<CoreVidReading>();
+        private IReadOnlyList<CoreVidReading> snapshot;
         public void Add(IEnumerable<CoreVidReading> readings, long now)
         {
-            foreach (var reading in readings) values.Enqueue(reading);
-            while (values.Count > 16000 || values.Count > 0 && (now - values.Peek().Timestamp) / (double)Stopwatch.Frequency > 5) values.Dequeue();
+            foreach (var reading in readings) { values.Enqueue(reading); snapshot = null; }
+            while (values.Count > 16000 || values.Count > 0 && (now - values.Peek().Timestamp) / (double)Stopwatch.Frequency > 5) { values.Dequeue(); snapshot = null; }
         }
-        public IReadOnlyList<CoreVidReading> Recent => values.ToArray();
-        public void Clear() => values.Clear();
+        public IReadOnlyList<CoreVidReading> Recent => snapshot ?? (snapshot = Array.AsReadOnly(values.ToArray()));
+        public void Clear() { values.Clear(); snapshot = null; }
     }
     public sealed class CoStepProposal
     {

@@ -1,13 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.IO;
 using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using Newtonsoft.Json;
 
 namespace ZenStatesDebugTool
 {
@@ -42,6 +39,8 @@ namespace ZenStatesDebugTool
         private readonly Button primary, pause, restore, keep, saveProfile, choose, retry, newSession, finishBalance, validate, coreCheck;
         private readonly DataGridView cores;
         private readonly TabControl tabs;
+        private readonly LiveGrid coreDisplay;
+        private readonly BackgroundStatusProbe recoveryDisplay;
         private GuidedCoPhase? displayedPhase;
         public CancellationToken ClosingToken => closing.Token;
         void INativeCoView.Show(Form owner) => Show(owner);
@@ -91,11 +90,11 @@ namespace ZenStatesDebugTool
             actions.Controls.Add(profileActions); layout.Controls.Add(actions, 0, 3);
             tabs = new TabControl { Dock = DockStyle.Fill };
             var perCore = new TabPage("Per-core evidence"); cores = new DataGridView { Dock = DockStyle.Fill, ReadOnly = true, AutoGenerateColumns = false,
-                AllowUserToAddRows = false, RowHeadersVisible = false, AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.AllCells, ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize };
+                AllowUserToAddRows = false, RowHeadersVisible = false, AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.DisplayedCells, ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize };
             foreach (string name in new[] { "Core", "CCD", "ReferenceCO", "CurrentCO", "VIDVolts", "ReportedMHz", "Samples", "Eligibility" }) cores.Columns.Add(new DataGridViewTextBoxColumn {
-                Name = name, HeaderText = name, DataPropertyName = name, AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, MinimumWidth = name == "Eligibility" ? 250 : 75,
+                Name = name, HeaderText = name, DataPropertyName = name, SortMode = DataGridViewColumnSortMode.NotSortable, AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, MinimumWidth = name == "Eligibility" ? 250 : 75,
                 FillWeight = name == "Eligibility" ? 300 : 100, DefaultCellStyle = new DataGridViewCellStyle { WrapMode = DataGridViewTriState.True } });
-            perCore.Controls.Add(cores);
+            coreDisplay = new LiveGrid(cores); perCore.Controls.Add(cores);
             var comparison = new TabPage("Comparison and report"); report = new TextBox { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, WordWrap = true, ScrollBars = ScrollBars.Vertical }; comparison.Controls.Add(report);
             var coverage = new TabPage("Additional core coverage"); var coveragePanel = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, WrapContents = true };
             coveragePanel.Controls.Add(new Label { AutoSize = true, Text = "Core / SMT rendering coverage is separate from all-processor VID balancing. Correctness, idle and transition tests remain incomplete." });
@@ -125,7 +124,8 @@ namespace ZenStatesDebugTool
                 }
             }
             SizeChanged += (s, e) => Wrap(); FontChanged += (s, e) => Wrap(); Wrap();
-            CreateSession(); render.Tick += (s, e) => Render(); render.Start();
+            CreateSession(); recoveryDisplay = new BackgroundStatusProbe(() => services.Recovery.IsPending, session.Phase == GuidedCoPhase.Recovery);
+            render.Tick += (s, e) => Render(); render.Start();
             Shown += async (s, e) => await InitializeAsync();
             FormClosed += (s, e) => Stop(); Disposed += (s, e) => Stop(); UpdateActions();
         }
@@ -189,7 +189,8 @@ namespace ZenStatesDebugTool
         private void UpdateActions()
         {
             if (stopped || session == null) return;
-            bool idle = !session.Busy && !initializing, pending = services.Recovery.IsPending;
+            _ = recoveryDisplay.Refresh();
+            bool idle = !session.Busy && !initializing, pending = session.Phase != GuidedCoPhase.Finished && recoveryDisplay.Value;
             var current = session.Phase;
             bool prepared = monitor != null && monitor.Error == null && recipe != null;
             primary.Text = UiText.T(current == GuidedCoPhase.Ready ? (starting.SelectedIndex == 0 ? "Save offsets & measure CO 0 reference" : "Save offsets & measure current reference") : current == GuidedCoPhase.Paused ? "Resume session" : current == GuidedCoPhase.ReadyToBalance ? "Start supervised balancing" : current == GuidedCoPhase.ReadyToValidate ? "Validate fixed candidate" : "Read current state");
@@ -214,7 +215,7 @@ namespace ZenStatesDebugTool
         }
         private void Render()
         {
-            if (stopped) return; UpdateActions();
+            if (stopped || WindowState == FormWindowState.Minimized) return; UpdateActions();
             if (displayedPhase != session.Phase) {
                 if (session.Phase == GuidedCoPhase.Results) tabs.SelectedIndex = 1;
                 else if (session.Phase == GuidedCoPhase.Balancing || session.Phase == GuidedCoPhase.Recovery) tabs.SelectedIndex = 0;
@@ -225,18 +226,21 @@ namespace ZenStatesDebugTool
             else if (session.Phase != GuidedCoPhase.Ready) status.Text = session.Status;
             session.RefreshEvidence(); var evidence = session.Evidence;
             var live = monitor?.Latest ?? new CoreVidReading[0];
-            if (evidence != null) cores.DataSource = evidence.Cores.Select(c => new { Core = c.Slot, CCD = c.Ccd < 0 ? "Unknown" : c.Ccd.ToString(),
-                ReferenceCO = session.ReferenceOffsets != null && session.ReferenceOffsets.TryGetValue(c.Slot, out int reference) ? reference.ToString() : "Not captured", CurrentCO = c.Co?.ToString() ?? "Unavailable",
-                VIDVolts = (c.Vid ?? live.LastOrDefault(r => r.Slot == c.Slot && StopwatchFresh(r))?.VidVolts)?.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture) ?? "Unavailable",
-                ReportedMHz = (c.Mhz ?? live.LastOrDefault(r => r.Slot == c.Slot && StopwatchFresh(r))?.ReportedMhz)?.ToString("0", System.Globalization.CultureInfo.InvariantCulture) ?? "Unavailable",
-                Samples = c.Samples, Eligibility = c.Reason + (c.Vid.HasValue ? " · window mean" : " · live VID; mean unavailable") }).ToList();
-            else if (session.CurrentOffsets != null) cores.DataSource = session.CurrentOffsets.Select(c => new { Core = c.Key, CCD = live.LastOrDefault(r => r.Slot == c.Key)?.Ccd.ToString() ?? "Unknown", ReferenceCO = "Not captured", CurrentCO = c.Value.ToString(),
-                VIDVolts = live.LastOrDefault(r => r.Slot == c.Key && StopwatchFresh(r))?.VidVolts?.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture) ?? "Unavailable",
-                ReportedMHz = live.LastOrDefault(r => r.Slot == c.Key && StopwatchFresh(r))?.ReportedMhz?.ToString("0", System.Globalization.CultureInfo.InvariantCulture) ?? "Unavailable", Samples = 0, Eligibility = "Current CO readback captured; reference context requires review" }).ToList();
-            else if (monitor != null) cores.DataSource = live.Select(r => new { Core = r.Slot, CCD = r.Ccd.ToString(), ReferenceCO = "Not captured", CurrentCO = "Not captured", VIDVolts = StopwatchFresh(r) ? r.VidVolts?.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture) ?? "Unavailable" : "Unavailable",
-                ReportedMHz = StopwatchFresh(r) ? r.ReportedMhz?.ToString("0", System.Globalization.CultureInfo.InvariantCulture) ?? "Unavailable" : "Unavailable", Samples = 1, Eligibility = r.Issue ?? "Read-only readiness; no reference yet" }).ToList();
+            var liveByCore = live.GroupBy(r => r.Slot).ToDictionary(g => g.Key, g => g.Last());
+            string Vid(decimal? value) => value?.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture) ?? "Unavailable";
+            string Mhz(decimal? value) => value?.ToString("0", System.Globalization.CultureInfo.InvariantCulture) ?? "Unavailable";
+            CoreVidReading Latest(int slot) => liveByCore.TryGetValue(slot, out var row) ? row : null;
+            CoreVidReading Fresh(int slot) { var row = Latest(slot); return row != null && StopwatchFresh(row) ? row : null; }
+            if (evidence != null) coreDisplay.Update(evidence.Cores.Select(c => new LiveGridRow(c.Slot, c.Slot, c.Ccd < 0 ? "Unknown" : c.Ccd.ToString(),
+                session.ReferenceOffsets != null && session.ReferenceOffsets.TryGetValue(c.Slot, out int reference) ? reference.ToString() : "Not captured", c.Co?.ToString() ?? "Unavailable",
+                Vid(c.Vid ?? Fresh(c.Slot)?.VidVolts), Mhz(c.Mhz ?? Fresh(c.Slot)?.ReportedMhz), c.Samples, c.Reason + (c.Vid.HasValue ? " · window mean" : " · live VID; mean unavailable"))));
+            else if (session.CurrentOffsets != null) coreDisplay.Update(session.CurrentOffsets.Select(c => new LiveGridRow(c.Key, c.Key, Latest(c.Key)?.Ccd.ToString() ?? "Unknown", "Not captured", c.Value.ToString(),
+                Vid(Fresh(c.Key)?.VidVolts), Mhz(Fresh(c.Key)?.ReportedMhz), 0, "Current CO readback captured; reference context requires review")));
+            else if (monitor != null) coreDisplay.Update(live.Select(r => new LiveGridRow(r.Slot, r.Slot, r.Ccd.ToString(), "Not captured", "Not captured",
+                Vid(Fresh(r.Slot)?.VidVolts), Mhz(Fresh(r.Slot)?.ReportedMhz), 1, r.Issue ?? "Read-only readiness; no reference yet")));
             metrics.Text = monitor == null ? "Native source unavailable." : "Requested 100 ms; achieved " + monitor.LastCadenceMs.ToString("0.0") + " ms; CPU " + (session.Temperature?.ToString("0.0") ?? "—") + " °C.";
-            report.Text = session.Comparison + "\r\n" + session.Coverage + "\r\n\r\n" + session.Status + "\r\n\r\nOnly CO endpoints and editor context are checked. Unobserved external changes cannot be excluded. Profiles are CO-only experiments; startup selection is unchanged.";
+            string reportText = session.Comparison + "\r\n" + session.Coverage + "\r\n\r\n" + session.Status + "\r\n\r\nOnly CO endpoints and editor context are checked. Unobserved external changes cannot be excluded. Profiles are CO-only experiments; startup selection is unchanged.";
+            if (report.Text != reportText) report.Text = reportText;
         }
         private static string PhaseName(GuidedCoPhase phase)
         {
@@ -257,12 +261,8 @@ namespace ZenStatesDebugTool
                 var summary = new { Phase = session.Phase.ToString(), session.Status, session.Steps, session.ReferenceRuns, session.CandidateRuns, session.Comparison, session.Coverage };
                 var latest = monitor?.Latest ?? new CoreVidReading[0];
                 await Task.Run(() => {
-                    string json = JsonConvert.SerializeObject(new { SchemaVersion = 2, Summary = summary,
-                        Runs = Newtonsoft.Json.Linq.JToken.Parse(records.Export()), TrialJournal = Newtonsoft.Json.Linq.JToken.Parse(services.Journal.Export()), NativeSource = latest }, Formatting.Indented);
-                    if (Encoding.UTF8.GetByteCount(json) > 16 * 1024 * 1024) throw new InvalidOperationException("Guided report exceeds 16 MiB.");
-                    string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
-                    try { File.WriteAllText(temporary, json, new UTF8Encoding(false)); if (File.Exists(path)) File.Replace(temporary, path, null); else File.Move(temporary, path); }
-                    finally { if (File.Exists(temporary)) File.Delete(temporary); }
+                    AtomicJsonExport.Write(path, new { SchemaVersion = 2, Summary = summary,
+                        Runs = records.ExportSnapshot(), TrialJournal = services.Journal.ExportSnapshot(), NativeSource = latest }, 16 * 1024 * 1024);
                 });
                 if (!stopped) ShowNotice("Report saved. It cannot apply or resume tuning.");
             }
@@ -272,7 +272,7 @@ namespace ZenStatesDebugTool
         public void InvalidateCapture() => monitor?.Clear();
         private void Stop()
         {
-            if (stopped) return; stopped = true; closing.Cancel(); session.Dispose(); monitor?.Dispose(); render.Stop(); render.Dispose(); records.Interrupt();
+            if (stopped) return; stopped = true; closing.Cancel(); session.Dispose(); monitor?.Dispose(); recoveryDisplay.Dispose(); render.Stop(); render.Dispose(); records.Interrupt();
         }
     }
 }

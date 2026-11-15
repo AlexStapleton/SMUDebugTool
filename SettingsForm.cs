@@ -2276,23 +2276,15 @@ namespace ZenStatesDebugTool
 
                 var result = new StringBuilder("REG         Value(HEX) Value(BIN)" + Environment.NewLine);
 
-                // Lock the whole read loop (no UI Invoke happens inside it); the status and
-                // result-form marshals are outside this region.
-                lock (Hardware.Sync)
+                if (endReg < startReg || (ulong)endReg - startReg > 262144) throw new ApplicationException("Scan at most 256 KiB at a time.");
+                for (ulong address = startReg; address <= endReg; address += 4)
                 {
-                    Hardware.ThrowIfClosing();
-                    if ((ulong)endReg - startReg > 262144) throw new ApplicationException("Scan at most 256 KiB at a time.");
-                    for (ulong address = startReg; address <= endReg; address += 4)
-                    {
-                        Hardware.ThrowIfClosing();
-                        startReg = (uint)address;
-                        var data = cpu.ReadDword(startReg);
-                        result.AppendLine($"0x{startReg:X8}: 0x{data:X8} {Convert.ToString(data, 2).PadLeft(32, '0')}");
-                        string decoded = RegisterDecoder.Decode(RegisterKind.Pci, startReg, data, decodeContext);
-                        if (!string.IsNullOrEmpty(decoded))
-                            result.Append(decoded);
-
-                    }
+                    uint register = (uint)address;
+                    var data = Hardware.Locked(() => cpu.ReadDword(register));
+                    result.AppendLine($"0x{register:X8}: 0x{data:X8} {Convert.ToString(data, 2).PadLeft(32, '0')}");
+                    string decoded = RegisterDecoder.Decode(RegisterKind.Pci, register, data, decodeContext);
+                    if (!string.IsNullOrEmpty(decoded)) result.Append(decoded);
+                    if ((address - startReg) % 256 == 252) Thread.Yield();
                 }
 
                 ShowResultForm("PCI Scan result", result.ToString());
@@ -2486,39 +2478,19 @@ namespace ZenStatesDebugTool
                 uint LFuncStd = 0, LFuncExt = 0;
                 uint eax = 0, ebx = 0, ecx = 0, edx = 0;
 
-                lock (Hardware.Sync)
-                {
-                    Hardware.ThrowIfClosing();
-                    if (cpu.Cpuid(0x00000000, ref eax, ref ebx, ref ecx, ref edx))
-                        LFuncStd = eax;
-
-                    if (cpu.Cpuid(0x80000000, ref eax, ref ebx, ref ecx, ref edx))
-                        LFuncExt = eax - 0x80000000;
-
-                    LFuncStd = Math.Min(LFuncStd, 65535);
-                    LFuncExt = Math.Min(LFuncExt, 65535);
-                    for (uint i = 0; i <= LFuncStd; ++i)
-                    {
-                        Hardware.ThrowIfClosing();
-                        var index = 0x00000000 + i;
-                        cpu.Cpuid(index, ref eax, ref ebx, ref ecx, ref edx);
-                        result.AppendLine($"0x{index:X8}: 0x{eax:X8} 0x{ebx:X8} 0x{ecx:X8} 0x{edx:X8}");
-                        string decoded = RegisterDecoder.Decode(RegisterKind.Cpuid, index, eax, decodeContext);
-                        if (!string.IsNullOrEmpty(decoded))
-                            result.Append(decoded);
-                    }
-
-                    for (uint i = 0; i <= LFuncExt; ++i)
-                    {
-                        Hardware.ThrowIfClosing();
-                        var index = 0x80000000 + i;
-                        cpu.Cpuid(index, ref eax, ref ebx, ref ecx, ref edx);
-                        result.AppendLine($"0x{index:X8}: 0x{eax:X8} 0x{ebx:X8} 0x{ecx:X8} 0x{edx:X8}");
-                        string decoded = RegisterDecoder.Decode(RegisterKind.Cpuid, index, eax, decodeContext);
-                        if (!string.IsNullOrEmpty(decoded))
-                            result.Append(decoded);
-                    }
+                bool ReadLeaf(uint index) => Hardware.Locked(() => cpu.Cpuid(index, ref eax, ref ebx, ref ecx, ref edx));
+                void AppendLeaf(uint index) {
+                    ReadLeaf(index);
+                    result.AppendLine($"0x{index:X8}: 0x{eax:X8} 0x{ebx:X8} 0x{ecx:X8} 0x{edx:X8}");
+                    string decoded = RegisterDecoder.Decode(RegisterKind.Cpuid, index, eax, decodeContext);
+                    if (!string.IsNullOrEmpty(decoded)) result.Append(decoded);
+                    if ((index & 63) == 63) Thread.Yield();
                 }
+                if (ReadLeaf(0x00000000)) LFuncStd = eax;
+                if (ReadLeaf(0x80000000)) LFuncExt = eax - 0x80000000;
+                LFuncStd = Math.Min(LFuncStd, 65535); LFuncExt = Math.Min(LFuncExt, 65535);
+                for (uint i = 0; i <= LFuncStd; ++i) AppendLeaf(i);
+                for (uint i = 0; i <= LFuncExt; ++i) AppendLeaf(0x80000000 + i);
 
                 ShowResultForm("CPUID Scan result", result.ToString());
             }
