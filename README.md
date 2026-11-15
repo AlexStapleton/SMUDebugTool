@@ -18,6 +18,10 @@ Startup now skips unused inventory scans and loads P-state/AMD ACPI data on dema
 **Tools → Startup timings** separates window visibility from tuning readiness;
 see [startup performance and measurement](docs/startup-performance.md).
 
+The [performance audit](docs/performance-audit-2026-11-15.md) records measured
+rendering/allocation improvements, cooperative scans, streamed exports and the
+remaining hardware-dependent profiling work. Reproducible synthetic probes are included.
+
 ### Build and package this fork
 
 Windows x64, .NET Framework 4.8 and the .NET SDK specified in `global.json` are required.

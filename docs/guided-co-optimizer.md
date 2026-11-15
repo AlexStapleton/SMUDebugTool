@@ -31,6 +31,8 @@ The bounded journal atomically records frozen configuration, full-before/target 
 
 Acquisition requests 100 ms; display renders every 200 ms. Cadence is observed, not guaranteed. Native reads and writes share the application's hardware lifetime/serialization. UI rendering does no driver I/O; safety initialization and exports run outside the UI thread. Cinebench processes are created into an owned job and only that process tree is terminated on cancellation. Existing benchmark instances are not killed.
 
+Live rendering retains keyed rows and updates changed cells, preserving scroll/selection. Minimized windows skip presentation while acquisition, workload control and safety checks continue. Recovery-button visibility uses a one-second background display probe; real recovery checks still gate every action. Reports use detached snapshots and a single bounded UTF-8 serialization outside the UI thread. See the [performance audit](performance-audit-2026-11-15.md) for measured software costs and pending hardware checks.
+
 ## Acceptance and remaining limits
 
 Automated tests use fake clocks, native readings, safety signals and owned-process fixtures. They cover phase ordering, bounds, trial effectiveness, mid-preflight failures, cancellation, recovery, profile isolation and score exclusion. Synthetic WinForms layouts are inspected with normal and doubled fonts. These checks do not validate actual monitor DPI or firmware behavior.

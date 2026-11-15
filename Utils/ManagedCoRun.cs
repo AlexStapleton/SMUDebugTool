@@ -30,7 +30,7 @@ namespace ZenStatesDebugTool
             try {
                 DiscardSuggestion();
                 cancellation.ThrowIfCancellationRequested();
-                if (session.IsRecording || session.Trials.Count >= 100 || role != "Baseline" && role != "Candidate" || zeroBaseline && role != "Baseline") throw new InvalidOperationException("End the current recording, clear a full session or choose a valid run role.");
+                if (session.IsRecording || session.TrialCount >= 100 || role != "Baseline" && role != "Candidate" || zeroBaseline && role != "Baseline") throw new InvalidOperationException("End the current recording, clear a full session or choose a valid run role.");
                 string issue = health?.Invoke(); if (issue != null) throw new InvalidOperationException(issue);
                 var before = await capture(); CoRecoveryStore.RequireComplete(before); cancellation.ThrowIfCancellationRequested();
                 if (zeroBaseline) {
@@ -61,7 +61,7 @@ namespace ZenStatesDebugTool
                 session.MarkEnd(utcNow());
                 var after = await capture();
                 string context = NativeCoSession.Context(before, after);
-                if (result.Completed && (context != "CO endpoints unchanged" || session.Trials.Last().Changes.Count > 0)) { result.Outcome = "Inconclusive"; result.Score = null; result.Detail = "Run context changed or contains tuning activity: " + context; }
+                if (result.Completed && (context != "CO endpoints unchanged" || session.ActiveHasChanges)) { result.Outcome = "Inconclusive"; result.Score = null; result.Detail = "Run context changed or contains tuning activity: " + context; }
                 session.End(after, result.Completed ? result.Score : null, result);
                 AssistanceBlocked = !result.Completed;
                 if (result.Completed && proposed != null && (System.Diagnostics.Stopwatch.GetTimestamp() - lastSuggestion) / (double)System.Diagnostics.Stopwatch.Frequency <= 30) {

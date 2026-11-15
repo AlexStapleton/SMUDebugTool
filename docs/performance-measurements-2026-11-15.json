@@ -1,0 +1,171 @@
+{
+  "SchemaVersion": 1,
+  "Notes": "Median of independent sequential process runs; ranges retained. Export: five measured operations after eight warm-ups in one process per build. Synthetic software costs, not whole-app or driver performance. Allocation is approximate process-wide cumulative bytes, not resident memory.",
+  "Results": [
+    {
+      "Name": "Eligibility / 16 cores / 20 ms",
+      "BeforeUs": 566.5218,
+      "AfterUs": 297.79920000000004,
+      "BeforeRange": [
+        580.8982,
+        566.5218,
+        563.1934
+      ],
+      "AfterRange": [
+        322.7912,
+        297.79920000000004,
+        296.9484
+      ],
+      "BeforeAllocatedBytes": 287701.664,
+      "AfterAllocatedBytes": 7398.608
+    },
+    {
+      "Name": "Window snapshot / 16 cores",
+      "BeforeUs": 0.9239,
+      "AfterUs": 0.0056,
+      "BeforeRange": [
+        0.9239,
+        1.0441,
+        0.8544
+      ],
+      "AfterRange": [
+        0.0056,
+        0.0056,
+        0.0056
+      ],
+      "BeforeAllocatedBytes": 32184.192,
+      "AfterAllocatedBytes": 8.192
+    },
+    {
+      "Name": "Eligibility / 64 cores / 20 ms",
+      "BeforeUs": 2740.4668,
+      "AfterUs": 1278.723,
+      "BeforeRange": [
+        2740.4668,
+        3301.0248,
+        2347.5266
+      ],
+      "AfterRange": [
+        1264.1276,
+        1341.4096,
+        1278.723
+      ],
+      "BeforeAllocatedBytes": 1146548.432,
+      "AfterAllocatedBytes": 25314.8
+    },
+    {
+      "Name": "Window snapshot / 64 cores",
+      "BeforeUs": 11.468200000000001,
+      "AfterUs": 0.0031000000000000003,
+      "BeforeRange": [
+        11.468200000000001,
+        16.6139,
+        11.238800000000001
+      ],
+      "AfterRange": [
+        0.0031000000000000003,
+        0.0031000000000000003,
+        0.0029000000000000002
+      ],
+      "BeforeAllocatedBytes": 128032.192,
+      "AfterAllocatedBytes": 8.192
+    },
+    {
+      "Name": "History count / 100 runs / 64 cores",
+      "BeforeUs": 109.82600000000001,
+      "AfterUs": 0.051000000000000004,
+      "BeforeRange": [
+        109.8142,
+        132.5384,
+        109.82600000000001
+      ],
+      "AfterRange": [
+        0.1044,
+        0.051000000000000004,
+        0.0502
+      ],
+      "BeforeAllocatedBytes": 779848.944,
+      "AfterAllocatedBytes": 32.768
+    },
+    {
+      "Name": "Record frame / 64 cores",
+      "BeforeUs": 18.681800000000003,
+      "AfterUs": 7.958,
+      "BeforeRange": [
+        18.681800000000003,
+        18.682100000000002,
+        18.648
+      ],
+      "AfterRange": [
+        7.958,
+        8.018600000000001,
+        7.803400000000001
+      ],
+      "BeforeAllocatedBytes": 8249.408,
+      "AfterAllocatedBytes": 32.768
+    },
+    {
+      "Name": "Guided render / 16 cores / unchanged frame",
+      "BeforeUs": 142228.4425,
+      "AfterUs": 465.103125,
+      "BeforeRange": [
+        148840.675625,
+        142228.4425,
+        59776.60187500001
+      ],
+      "AfterRange": [
+        465.2118750000001,
+        465.103125,
+        449.53625
+      ],
+      "BeforeAllocatedBytes": 805846.05,
+      "AfterAllocatedBytes": 23705.6
+    },
+    {
+      "Name": "Guided render / 64 cores / unchanged frame",
+      "BeforeUs": 274059.88375000004,
+      "AfterUs": 1160.2825,
+      "BeforeRange": [
+        286601.52625,
+        274059.88375000004,
+        129731.41
+      ],
+      "AfterRange": [
+        1160.2825,
+        1160.81,
+        1051.789375
+      ],
+      "BeforeAllocatedBytes": 2652084.95,
+      "AfterAllocatedBytes": 77056.4
+    },
+    {
+      "Name": "Guided render / 16 cores / changing frame",
+      "BeforeUs": 113835.08375000002,
+      "AfterUs": 6886.399375000001,
+      "BeforeRange": [
+        136313.74000000002,
+        113835.08375000002,
+        62371.128749999996
+      ],
+      "AfterRange": [
+        6886.399375000001,
+        6961.634375,
+        6658.04875
+      ],
+      "BeforeAllocatedBytes": 1525212.15,
+      "AfterAllocatedBytes": 864546.05
+    },
+    {
+      "Name": "Export / 100 runs / 64 cores / 64 KiB transcripts",
+      "BeforeUs": 93630.92000000001,
+      "AfterUs": 23439.02,
+      "BeforeAllocatedBytes": 118423979.2,
+      "AfterAllocatedBytes": 6720769.6,
+      "Repetitions": 1
+    }
+  ],
+  "BaselineSource": "6ad5bbabff8854ca96680edb5c48c01095ce276d",
+  "Runtime": ".NET Framework CLR 4.0.30319.42000, x64 production Release assemblies",
+  "BaselineExecutableSha256": "cb70251ae5978e2385b8b8a46630513b9771c927594d38426d99bfd7a7b67ba9",
+  "CandidateExecutableSha256": "2d8a78e8fe3d1babc72b5cac5f8dcfe0c8cf3c4b2c1beacbbab07f3cbf0cc040"
+}
