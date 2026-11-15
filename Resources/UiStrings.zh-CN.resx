@@ -637,4 +637,47 @@
   <data name="Show test setup" xml:space="preserve"><value>显示测试设置</value></data>
   <data name="Stop owned test" xml:space="preserve"><value>停止本程序启动的测试</value></data>
   <data name="Timeout seconds" xml:space="preserve"><value>超时秒数</value></data>
+  <data name="Additional core coverage" xml:space="preserve"><value>额外核心测试</value></data>
+  <data name="Balancing under load" xml:space="preserve"><value>负载下平衡</value></data>
+  <data name="Budget (minutes)" xml:space="preserve"><value>调校预算（分钟）</value></data>
+  <data name="CO optimizer" xml:space="preserve"><value>CO 优化器</value></data>
+  <data name="CO optimizer — guided session" xml:space="preserve"><value>CO 优化器 — 引导会话</value></data>
+  <data name="Comparison and report" xml:space="preserve"><value>比较和报告</value></data>
+  <data name="Continue balancing" xml:space="preserve"><value>继续平衡调校</value></data>
+  <data name="CurrentCO" xml:space="preserve"><value>最近 CO 读回</value></data>
+  <data name="Decision complete" xml:space="preserve"><value>选择完成</value></data>
+  <data name="Eligibility" xml:space="preserve"><value>资格和原因</value></data>
+  <data name="Finish balancing &amp; validate" xml:space="preserve"><value>结束平衡并验证</value></data>
+  <data name="Improve current offsets" xml:space="preserve"><value>优化当前偏移</value></data>
+  <data name="Keep temporarily" xml:space="preserve"><value>暂时保留</value></data>
+  <data name="Measuring reference" xml:space="preserve"><value>测量基准</value></data>
+  <data name="Negative CO bound" xml:space="preserve"><value>CO 负向下限</value></data>
+  <data name="New session" xml:space="preserve"><value>新会话</value></data>
+  <data name="Pause" xml:space="preserve"><value>暂停</value></data>
+  <data name="Paused" xml:space="preserve"><value>已暂停</value></data>
+  <data name="Per-core evidence" xml:space="preserve"><value>各核心证据</value></data>
+  <data name="Prepare" xml:space="preserve"><value>准备</value></data>
+  <data name="Read current state" xml:space="preserve"><value>读取当前状态</value></data>
+  <data name="Ready for validation" xml:space="preserve"><value>准备验证</value></data>
+  <data name="Reference ready" xml:space="preserve"><value>基准就绪</value></data>
+  <data name="ReferenceCO" xml:space="preserve"><value>基准 CO</value></data>
+  <data name="Resume session" xml:space="preserve"><value>继续会话</value></data>
+  <data name="Retry readiness" xml:space="preserve"><value>重新检查就绪状态</value></data>
+  <data name="Review candidate" xml:space="preserve"><value>检查候选</value></data>
+  <data name="Review recovery" xml:space="preserve"><value>检查恢复状态</value></data>
+  <data name="Run selected core render" xml:space="preserve"><value>运行所选核心渲染测试</value></data>
+  <data name="Samples" xml:space="preserve"><value>样本数</value></data>
+  <data name="Save experimental profile" xml:space="preserve"><value>保存实验配置</value></data>
+  <data name="Save offsets &amp; measure CO 0 reference" xml:space="preserve"><value>保存偏移并测量 CO 0 基准</value></data>
+  <data name="Save offsets &amp; measure current reference" xml:space="preserve"><value>保存偏移并测量当前基准</value></data>
+  <data name="Scored repeats" xml:space="preserve"><value>评分重复次数</value></data>
+  <data name="Start from CO 0" xml:space="preserve"><value>从 CO 0 开始</value></data>
+  <data name="Start supervised balancing" xml:space="preserve"><value>开始有人监督的平衡调校</value></data>
+  <data name="Stop &amp; restore original" xml:space="preserve"><value>停止并恢复原始偏移</value></data>
+  <data name="Stop at CPU °C" xml:space="preserve"><value>CPU 停止温度 °C</value></data>
+  <data name="Test seconds" xml:space="preserve"><value>测试秒数</value></data>
+  <data name="Test settings" xml:space="preserve"><value>测试设置</value></data>
+  <data name="Validate current candidate" xml:space="preserve"><value>验证当前候选</value></data>
+  <data name="Validate fixed candidate" xml:space="preserve"><value>验证固定候选偏移</value></data>
+  <data name="Validating fixed offsets" xml:space="preserve"><value>验证固定偏移</value></data>
 </root>

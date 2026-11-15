@@ -8,7 +8,7 @@ This began as an implementation plan; the tracker below records delivered code s
 
 ## Living implementation tracker
 
-Updated 14 November 2026. This document is now both the design and the change tracker. The preparation note above describes the original plan; implementation begins below. **Implemented** means the code and automated checks are delivered, not that a real BIOS has been tested. Update this table and the dated change log in each roadmap PR. Canonical repository path: `docs/capability-and-CO-roadmap.md`; the chat's output document mirrors it.
+Updated 14 November 2026. This document is now both the design and the change tracker. The preparation note above describes the original plan; implementation begins below. **Implemented** means the code and automated checks are delivered, not that a real BIOS has been tested. Update this table and the dated change log in each roadmap PR. Canonical repository path: `docs/capability-and-CO-roadmap.md`; the chat's output document mirrors it. The overview/native/managed milestones shipped in [v1.51.0](https://github.com/AlexStapleton/SMUDebugTool/releases/tag/v1.51.0) through PR #22. The guided milestone below targets v1.52.0 and remains under review.
 
 | Area | Current status | Delivered / remaining |
 | --- | --- | --- |
@@ -22,9 +22,9 @@ Updated 14 November 2026. This document is now both the design and the change tr
 | C08 Channel timings | Planned | No new implementation. |
 | C09 DIMM/SPD/EXPO | Planned | No new implementation. |
 | C10 Guided firmware editor | Planned | Existing v1.50 metadata guidance retained; grouped editing not started. |
-| C11 Session recording | Managed/manual implementation; hardware validation pending | Cinebench 2024.1.0 process ownership, duration/timeout, parsed scores, baseline/candidate records and export. Repeated-run statistics and richer telemetry remain planned. |
-| C12 Assisted CO | Explicit live/recorded one-step trials implemented | Zero/current-CO baseline choice; qualified proposal retained from a successful managed run; unchanged-context and fresh CO checks before applying. Automatic search remains deferred. |
-| C13 Validation/recovery | Partial implementation | Owned-process cancellation, core/SMT affinity, failure gates, persistent original CO recovery and startup-apply interlock. Correctness adapters, WHEA attribution and automatic search remain planned. |
+| C11 Session recording | Guided/manual implementation; hardware validation pending | Repeated fixed-offset reference/candidate scores, medians/ranges, owned Cinebench process lifetime and bounded export. Changing-offset scores excluded. Richer package telemetry remains planned. |
+| C12 Assisted CO | Experimental bounded supervised loop implemented | Guided zero/current reference, one continuous owned load, verified one-core -1 trials, fresh comparable native windows, cumulative limits and ineffective-response stop. Useful hardware response remains untested. |
+| C13 Validation/recovery | Partial implementation | Persistent original CO, bounded atomic trial journal, temperature/new-WHEA stop signals, current-state review and explicit verified restore/keep/save. Correctness adapters, idle/transitions and WHEA core attribution remain planned. |
 | C14 Manual-OC reporting | Planned | Existing dedicated controls retained. |
 | C15 GPU CO | Conditional/planned | Firmware acceptance untested. |
 | C16 Profile expansion | Deferred per feature | Thermal action remains standalone; no new profile fields in this milestone. |
@@ -62,6 +62,16 @@ Validation record: Release build passed with zero warnings/errors; **414 app tes
 - Keep native rendering active during managed work. Serialize exports outside the acquisition lock and UI thread. Collapse setup during a test and retain scrollable larger-font layouts.
 - Added 25 driver-free cases: Release build passed with zero warnings/errors; **479 app tests**, **9 upstream-bot tests** and package success/failure checks passed. Coverage includes process descendants, cancellation, unrelated-process isolation, output quotas, version/score validation, zero reset, partial writes, changed context, startup exclusion and UI close. Synthetic setup/result views were inspected at normal/doubled fonts. PR [#22](https://github.com/AlexStapleton/SMUDebugTool/pull/22) records CI for the exact commit. No real benchmark or live hardware operation was executed.
 - Runtime acceptance of the user's Cinebench console output, actual CPU load/affinity, native VID agreement and overhead remains pending. Full protocol and user flow: [managed workload guide](managed-co-workloads.md).
+
+### Change log — 14 November 2026, guided optimizer milestone (v1.52.0, PR [#23](https://github.com/AlexStapleton/SMUDebugTool/pull/23))
+
+- Replaced the main Tools workbench route with **CO optimizer**: automatic read-only preparation, explicit zero/current-CO reference, supervised balancing, fixed-offset validation and keep/save/restore. A completed reference gates balancing; validation is the next primary action when balancing ends. See [the guided contract and user flow](guided-co-optimizer.md).
+- Added repeated fixed-offset cohorts and medians/observed ranges. Warm-up and changing-offset loads are unscored; overlapping ranges do not demonstrate improvement. Separate individual core/SMT rendering retains explicit incomplete-correctness coverage.
+- Added one continuous owned all-processor load, verified one-core negative trials, cumulative time/step/bound limits, per-core eligibility reasons and a stop after three ineffective comparable responses on a core. Settling samples are excluded before a fresh complete decision window.
+- Added software-temperature and new System WHEA-Logger stop signals, source/context/load/write-boundary gates, cancellation and explicit recovery review. No automatic journal replay or rollback. Original recovery remains independent of the bounded atomic intent/result/response journal.
+- Added observed-CO-only experimental profile creation with no overwrite or startup-selection change, full session export, grouped font-aware controls and separate comparison display. Hardware I/O and export work remain outside UI rendering.
+- Validation: Release build has zero warnings/errors; **510 hardware-free app tests**, **9 upstream-bot tests** and package success/failure checks passed. Coverage includes full phase flow, bounds, settling exclusion, late failures, cancellation, per-core-target resume, recovery and profile isolation. Normal/doubled-font synthetic views were inspected and clipping corrected. Exact-head CI evidence is recorded with the PR. No live CPU writes or real benchmark ran during development.
+- Remaining acceptance: physical/native VID agreement, firmware CO response, temperature/event availability, real Cinebench output/load, overhead and monitor DPI. Equal requested VID and completed renders do not prove stability; correctness, idle/transition validation, long-duration testing and WHEA attribution remain open.
 
 ## Product goal
 
@@ -128,7 +138,7 @@ For multiple firmware edits, validate the whole request before sending; record e
 
 ### Stage 3 — Ship the manual CO workbench first
 
-Build native session recording and comparison before automatic search. Manual workload markers remain available, and managed Cinebench 2024.1.0 runs now coordinate process lifetime, native recording and parsed scores. Capture per-core VID and clocks through the existing driver; there is no external CSV or shared-memory dependency. Package/thermal streams and repeated-run statistics follow later.
+Build native session recording and comparison before automatic search. Managed Cinebench 2024.1.0 runs coordinate process lifetime, native recording and parsed scores. The guided milestone adds repeated-run medians/ranges and separate unscored balancing. Capture per-core VID and clocks through the existing driver; there is no external CSV or shared-memory dependency. Richer package/thermal streams remain planned.
 
 Expose one per-core table: physical core/CCD, current and candidate CO, readback outcome, active-sample VID if available, effective and reported clock, utilization/residency when available, test coverage and errors. Put measured rail voltage, package power and temperature in separate package/rail panels, not duplicated as alleged per-core physical voltages.
 
@@ -235,7 +245,7 @@ Journal the baseline, candidate, verified write outcomes, source context and pha
 
 Normal stop ends owned workloads and stops new writes promptly; it may offer or perform the session-authorized restore transaction when the driver remains responsive. Report partial restoration. After a system crash, next launch opens recovery without silently replaying or continuing the experiment. To make that effective, GUI and `--applyprofile` must share a persistent experiment interlock: a pending/interrupted trial blocks automatic experimental reapplication. If the current selected startup profile has not been independently validated, automated search must not arm until the user chooses a recovery/startup policy. An existing stable startup profile may remain eligible only when explicitly identified and not overwritten by experiments.
 
-Implemented original-CO recovery records are machine/topology-bound and written atomically. Pending/unreadable records block automatic startup apply before CPU initialization; a file lease excludes concurrent automatic apply and experiment snapshot creation. Restore is explicit and retains the record on partial failure. Keep-current clears the interlock without saving a profile. Full phase journals, workload-error attribution and automatic-search recovery remain future work. The program cannot guarantee recovery from hardware hangs, firmware persistence or independently applied BIOS configuration.
+Implemented original-CO recovery records are machine/topology-bound and written atomically. Pending/unreadable records block automatic startup apply before CPU initialization; a file lease excludes concurrent automatic apply and experiment snapshot creation. Restore is explicit and retains the record on partial failure. The guided milestone journals phases and trial intent/results, requires current readback before keeping interrupted values and never replays trials. Keep temporarily saves no profile; save experimental creates a new observed-CO-only profile. WHEA core/workload attribution and broader correctness remain future work. The program cannot guarantee recovery from hardware hangs, firmware persistence or independently applied BIOS configuration.
 
 ## 5. Architecture and verification plan
 
@@ -259,9 +269,9 @@ Hardware acceptance is staged: read-only captures and mapping checks first; then
 ## 6. Recommended delivery decisions
 
 1. Build Stage 0 and Stage 1 as the first release: capability report, scalar verification, thermal ceiling and a compact read-only overview. This gives useful improvements before the larger workbench.
-2. Deliver the native Stage 3 recorder and explicit one-step Stage 4 assistance for this user. This is implemented in PR #22; finish hardware acceptance before expanding into automatic search. Native per-core capture is the product path, with no CSV requirement.
+2. Hardware-test the Stage 3 recorder and guided bounded Stage 4 loop. The native/manual/managed foundation shipped in PR #22/v1.51.0; the guided implementation targets v1.52.0. Native per-core capture is the product path, with no CSV requirement. Keep the new loop experimental until hardware acceptance.
 3. Ship memory reads/editor work as an independent track so it does not block CO work. It targets a different user task and has different activation semantics.
-4. Add assisted proposals and broader validation after recorded comparisons are trustworthy. Automatic search is the last CO milestone, not the first demo.
+4. Extend correctness adapters, idle/transition coverage, WHEA attribution and independent confirmation after the guided flow passes hardware acceptance. Avoid treating VID alignment or observed score ranges as a stability verdict.
 5. Add manual-OC/GPU refinements and mobile/APU support independently, with their own hardware acceptance evidence. Keep live VDDG/DRAM voltage setters and unknown HSMP/WMI formats in research until proven.
 
 ## 7. Plan review

@@ -80,8 +80,9 @@ namespace ZenStatesDebugTool
     {
         public IReadOnlyDictionary<int, int> Expected { get; }
         public IReadOnlyDictionary<int, int> Requested { get; }
-        public CoBatchPlan(IReadOnlyDictionary<int, int> expected, IReadOnlyDictionary<int, int> requested)
-        { Expected = new System.Collections.ObjectModel.ReadOnlyDictionary<int, int>(expected.ToDictionary(c => c.Key, c => c.Value)); Requested = new System.Collections.ObjectModel.ReadOnlyDictionary<int, int>(requested.ToDictionary(c => c.Key, c => c.Value)); }
+        public Func<string> WriteGuard { get; }
+        public CoBatchPlan(IReadOnlyDictionary<int, int> expected, IReadOnlyDictionary<int, int> requested, Func<string> writeGuard = null)
+        { Expected = new System.Collections.ObjectModel.ReadOnlyDictionary<int, int>(expected.ToDictionary(c => c.Key, c => c.Value)); Requested = new System.Collections.ObjectModel.ReadOnlyDictionary<int, int>(requested.ToDictionary(c => c.Key, c => c.Value)); WriteGuard = writeGuard; }
     }
     public static class CoBatchTransaction
     {

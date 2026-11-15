@@ -193,29 +193,7 @@ namespace ZenStatesDebugTool
     {
         public static CoStepProposal Suggest(IEnumerable<CoreVidReading> readings, IReadOnlyDictionary<int, int> observedCo, int minimumCo, long now)
         {
-            if (minimumCo < -999 || minimumCo >= 0) throw new ArgumentOutOfRangeException(nameof(minimumCo));
-            var groups = readings.Where(r => now >= r.Timestamp && (now - r.Timestamp) / (double)Stopwatch.Frequency <= 5).GroupBy(r => r.Slot).ToList();
-            if (groups.Any(g => g.OrderBy(r => r.Timestamp).Last().Issue != null || (now - g.Max(r => r.Timestamp)) / (double)Stopwatch.Frequency > 0.5)) return null;
-            var candidates = new List<Tuple<int, int, decimal, decimal, decimal>>();
-            foreach (var group in groups) {
-                var samples = group.OrderBy(r => r.Timestamp).ToArray(); var last = samples.Last();
-                // Busy is an effective/reported clock heuristic, not a CPU-utilization counter.
-                if ((now - last.Timestamp) / (double)Stopwatch.Frequency > 0.5 || samples.Length < 20 ||
-                    (last.Timestamp - samples[0].Timestamp) / (double)Stopwatch.Frequency < 2 || samples.Any(s => s.Issue != null || !s.Busy || !s.VidVolts.HasValue || !s.ReportedMhz.HasValue) ||
-                    !observedCo.TryGetValue(group.Key, out int co) || co < -999 || co > 999) continue;
-                decimal frequency = samples.Average(s => s.ReportedMhz.Value);
-                if (samples.Max(s => s.ReportedMhz.Value) - samples.Min(s => s.ReportedMhz.Value) > frequency * 0.03m) continue;
-                candidates.Add(Tuple.Create(group.Key, last.Ccd, samples.Average(s => s.VidVolts.Value), frequency, (decimal)co));
-            }
-            foreach (var core in candidates.OrderByDescending(c => c.Item3)) {
-                if (core.Item5 - 1 < minimumCo || core.Item5 > 0) continue;
-                var peers = candidates.Where(p => p.Item1 != core.Item1 && p.Item2 == core.Item2 && Math.Abs(p.Item4 - core.Item4) <= core.Item4 * 0.03m).Select(p => p.Item3).OrderBy(v => v).ToArray();
-                if (peers.Length < 2) continue;
-                decimal median = peers[peers.Length / 2];
-                if (core.Item3 - median >= 0.0125m)
-                    return new CoStepProposal(core.Item1, (int)core.Item5, "Higher requested VID than comparable busy peers in the same CCD. One-step trial only; not a performance or stability verdict.");
-            }
-            return null;
+            return CoEligibility.Analyze(readings, observedCo, minimumCo, now).Proposal;
         }
     }
 }

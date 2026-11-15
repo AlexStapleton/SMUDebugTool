@@ -56,6 +56,12 @@
     <Compile Include="Utils\OwnedWorkloadProcess.cs" />
     <Compile Include="Utils\CoRecoveryStore.cs" />
     <Compile Include="Utils\ManagedCoRun.cs" />
+    <Compile Include="Utils\CoEligibility.cs" />
+    <Compile Include="Utils\CoRuntimeSafety.cs" />
+    <Compile Include="Utils\CoTrialJournal.cs" />
+    <Compile Include="Utils\GuidedCoSession.cs" />
+    <Compile Include="Utils\GuardedCoTransport.cs" />
+    <Compile Include="GuidedCoOptimizerForm.cs" />
     <Compile Include="NativeCoWorkbenchForm.cs" />
     <Compile Include="NativeCoWorkbenchForm.Managed.cs" />
     <Compile Include="SettingsForm.NativeCo.cs" />
