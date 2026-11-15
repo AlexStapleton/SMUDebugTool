@@ -63,7 +63,7 @@ Validation record: Release build passed with zero warnings/errors; **414 app tes
 - Added 25 driver-free cases: Release build passed with zero warnings/errors; **479 app tests**, **9 upstream-bot tests** and package success/failure checks passed. Coverage includes process descendants, cancellation, unrelated-process isolation, output quotas, version/score validation, zero reset, partial writes, changed context, startup exclusion and UI close. Synthetic setup/result views were inspected at normal/doubled fonts. PR [#22](https://github.com/AlexStapleton/SMUDebugTool/pull/22) records CI for the exact commit. No real benchmark or live hardware operation was executed.
 - Runtime acceptance of the user's Cinebench console output, actual CPU load/affinity, native VID agreement and overhead remains pending. Full protocol and user flow: [managed workload guide](managed-co-workloads.md).
 
-### Change log — 14 November 2026, guided optimizer milestone (v1.52.0)
+### Change log — 14 November 2026, guided optimizer milestone (v1.52.0, PR [#23](https://github.com/AlexStapleton/SMUDebugTool/pull/23))
 
 - Replaced the main Tools workbench route with **CO optimizer**: automatic read-only preparation, explicit zero/current-CO reference, supervised balancing, fixed-offset validation and keep/save/restore. A completed reference gates balancing; validation is the next primary action when balancing ends. See [the guided contract and user flow](guided-co-optimizer.md).
 - Added repeated fixed-offset cohorts and medians/observed ranges. Warm-up and changing-offset loads are unscored; overlapping ranges do not demonstrate improvement. Separate individual core/SMT rendering retains explicit incomplete-correctness coverage.

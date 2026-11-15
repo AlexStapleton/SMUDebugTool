@@ -92,7 +92,7 @@ namespace ZenStatesDebugTool
             tabs = new TabControl { Dock = DockStyle.Fill };
             var perCore = new TabPage("Per-core evidence"); cores = new DataGridView { Dock = DockStyle.Fill, ReadOnly = true, AutoGenerateColumns = false,
                 AllowUserToAddRows = false, RowHeadersVisible = false, AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.AllCells, ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize };
-            foreach (string name in new[] { "Core", "CCD", "ReferenceCO", "CurrentCO", "VIDVolts", "Samples", "Eligibility" }) cores.Columns.Add(new DataGridViewTextBoxColumn {
+            foreach (string name in new[] { "Core", "CCD", "ReferenceCO", "CurrentCO", "VIDVolts", "ReportedMHz", "Samples", "Eligibility" }) cores.Columns.Add(new DataGridViewTextBoxColumn {
                 Name = name, HeaderText = name, DataPropertyName = name, AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, MinimumWidth = name == "Eligibility" ? 250 : 75,
                 FillWeight = name == "Eligibility" ? 300 : 100, DefaultCellStyle = new DataGridViewCellStyle { WrapMode = DataGridViewTriState.True } });
             perCore.Controls.Add(cores);
@@ -118,8 +118,11 @@ namespace ZenStatesDebugTool
                 starting.Width = Math.Max(210, Math.Min(width - 20, TextRenderer.MeasureText("Improve current offsets", Font).Width + 35));
                 profileName.Width = Math.Max(150, Math.Min(width - saveProfile.PreferredSize.Width - 45, TextRenderer.MeasureText("CO experiment 2026-11-14 20-30", Font).Width + 25));
                 foreach (var number in new[] { bound, budget, stopTemperature, testSeconds, repeats }) number.Width = Math.Max(80, TextRenderer.MeasureText("-999", Font).Width + 26);
-                foreach (DataGridViewColumn column in cores.Columns) column.MinimumWidth = Math.Max(column.Name == "Eligibility" ? 220 : 50,
-                    TextRenderer.MeasureText(column.Name == "VIDVolts" ? "Unavailable" : column.Name == "Eligibility" ? "Comparable peers" : column.Name.EndsWith("CO") ? "-999" : "1000", Font).Width + 18);
+                foreach (DataGridViewColumn column in cores.Columns) {
+                    int headerWord = UiText.T(column.Name).Split(' ').Max(word => TextRenderer.MeasureText(word, Font).Width) + 18;
+                    int valueWidth = TextRenderer.MeasureText(column.Name == "VIDVolts" ? "Unavailable" : column.Name == "Eligibility" ? "Comparable peers" : column.Name.EndsWith("CO") ? "-999" : "1000", Font).Width + 18;
+                    column.MinimumWidth = Math.Max(column.Name == "Eligibility" ? 220 : 50, Math.Max(headerWord, valueWidth));
+                }
             }
             SizeChanged += (s, e) => Wrap(); FontChanged += (s, e) => Wrap(); Wrap();
             CreateSession(); render.Tick += (s, e) => Render(); render.Start();
@@ -225,10 +228,13 @@ namespace ZenStatesDebugTool
             if (evidence != null) cores.DataSource = evidence.Cores.Select(c => new { Core = c.Slot, CCD = c.Ccd < 0 ? "Unknown" : c.Ccd.ToString(),
                 ReferenceCO = session.ReferenceOffsets != null && session.ReferenceOffsets.TryGetValue(c.Slot, out int reference) ? reference.ToString() : "Not captured", CurrentCO = c.Co?.ToString() ?? "Unavailable",
                 VIDVolts = (c.Vid ?? live.LastOrDefault(r => r.Slot == c.Slot && StopwatchFresh(r))?.VidVolts)?.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture) ?? "Unavailable",
+                ReportedMHz = (c.Mhz ?? live.LastOrDefault(r => r.Slot == c.Slot && StopwatchFresh(r))?.ReportedMhz)?.ToString("0", System.Globalization.CultureInfo.InvariantCulture) ?? "Unavailable",
                 Samples = c.Samples, Eligibility = c.Reason + (c.Vid.HasValue ? " · window mean" : " · live VID; mean unavailable") }).ToList();
             else if (session.CurrentOffsets != null) cores.DataSource = session.CurrentOffsets.Select(c => new { Core = c.Key, CCD = live.LastOrDefault(r => r.Slot == c.Key)?.Ccd.ToString() ?? "Unknown", ReferenceCO = "Not captured", CurrentCO = c.Value.ToString(),
-                VIDVolts = live.LastOrDefault(r => r.Slot == c.Key && StopwatchFresh(r))?.VidVolts?.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture) ?? "Unavailable", Samples = 0, Eligibility = "Current CO readback captured; reference context requires review" }).ToList();
-            else if (monitor != null) cores.DataSource = live.Select(r => new { Core = r.Slot, CCD = r.Ccd.ToString(), ReferenceCO = "Not captured", CurrentCO = "Not captured", VIDVolts = StopwatchFresh(r) ? r.VidVolts?.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture) ?? "Unavailable" : "Unavailable", Samples = 1, Eligibility = r.Issue ?? "Read-only readiness; no reference yet" }).ToList();
+                VIDVolts = live.LastOrDefault(r => r.Slot == c.Key && StopwatchFresh(r))?.VidVolts?.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture) ?? "Unavailable",
+                ReportedMHz = live.LastOrDefault(r => r.Slot == c.Key && StopwatchFresh(r))?.ReportedMhz?.ToString("0", System.Globalization.CultureInfo.InvariantCulture) ?? "Unavailable", Samples = 0, Eligibility = "Current CO readback captured; reference context requires review" }).ToList();
+            else if (monitor != null) cores.DataSource = live.Select(r => new { Core = r.Slot, CCD = r.Ccd.ToString(), ReferenceCO = "Not captured", CurrentCO = "Not captured", VIDVolts = StopwatchFresh(r) ? r.VidVolts?.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture) ?? "Unavailable" : "Unavailable",
+                ReportedMHz = StopwatchFresh(r) ? r.ReportedMhz?.ToString("0", System.Globalization.CultureInfo.InvariantCulture) ?? "Unavailable" : "Unavailable", Samples = 1, Eligibility = r.Issue ?? "Read-only readiness; no reference yet" }).ToList();
             metrics.Text = monitor == null ? "Native source unavailable." : "Requested 100 ms; achieved " + monitor.LastCadenceMs.ToString("0.0") + " ms; CPU " + (session.Temperature?.ToString("0.0") ?? "—") + " °C.";
             report.Text = session.Comparison + "\r\n" + session.Coverage + "\r\n\r\n" + session.Status + "\r\n\r\nOnly CO endpoints and editor context are checked. Unobserved external changes cannot be excluded. Profiles are CO-only experiments; startup selection is unchanged.";
         }
